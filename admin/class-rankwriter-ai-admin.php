@@ -27,6 +27,7 @@ class RankWriter_AI_Admin {
 	const PARASITE_SLUG   = 'rankwriter-ai-parasite';
 	const RISK_SLUG       = 'rankwriter-ai-risk';
 	const HEALER_SLUG     = 'rankwriter-ai-healer';
+	const SPEED_SLUG      = 'rankwriter-ai-speed';
 	const LEGAL_SLUG      = 'rankwriter-ai-legal';
 	const SETTINGS_SLUG   = 'rankwriter-ai-settings';
 
@@ -55,6 +56,7 @@ class RankWriter_AI_Admin {
 	const PARASITE_NONCE  = 'rwai_parasite';
 	const RISK_NONCE      = 'rwai_risk';
 	const HEALER_NONCE    = 'rwai_healer';
+	const SPEED_NONCE     = 'rwai_speed';
 
 	public function register_hooks() {
 		add_action( 'admin_menu', array( $this, 'register_menus' ) );
@@ -283,6 +285,14 @@ class RankWriter_AI_Admin {
 		);
 		add_submenu_page(
 			self::MENU_SLUG,
+			__( 'Speed Optimizer', 'rankwriter-ai' ),
+			__( 'Speed Optimizer', 'rankwriter-ai' ),
+			'manage_options',
+			self::SPEED_SLUG,
+			array( $this, 'render_speed' )
+		);
+		add_submenu_page(
+			self::MENU_SLUG,
 			__( 'Settings', 'rankwriter-ai' ),
 			__( 'Settings', 'rankwriter-ai' ),
 			'manage_options',
@@ -297,6 +307,9 @@ class RankWriter_AI_Admin {
 		}
 		wp_enqueue_style( 'rwai-admin', RWAI_PLUGIN_URL . 'admin/css/admin.css', array(), RWAI_VERSION );
 		wp_enqueue_script( 'rwai-admin', RWAI_PLUGIN_URL . 'admin/js/admin.js', array( 'jquery' ), RWAI_VERSION, true );
+		if ( false !== strpos( (string) $hook, self::SPEED_SLUG ) ) {
+			wp_enqueue_style( 'rwai-speed', RWAI_PLUGIN_URL . 'admin/css/speed-optimizer.css', array( 'rwai-admin' ), RWAI_VERSION );
+		}
 		wp_localize_script(
 			'rwai-admin',
 			'RWAI',
@@ -558,6 +571,30 @@ class RankWriter_AI_Admin {
 				break;
 			case 'healer_rewrite_headings':
 				$this->handle_healer_rewrite_headings();
+				break;
+			case 'speed_optimize_now':
+				$this->handle_speed_optimize_now();
+				break;
+			case 'speed_save_settings':
+				$this->handle_speed_save_settings();
+				break;
+			case 'speed_clear_cache':
+				$this->handle_speed_clear_cache();
+				break;
+			case 'speed_bulk_webp':
+				$this->handle_speed_bulk_webp();
+				break;
+			case 'speed_db_clean':
+				$this->handle_speed_db_clean();
+				break;
+			case 'speed_run_test':
+				$this->handle_speed_run_test();
+				break;
+			case 'speed_restore':
+				$this->handle_speed_restore();
+				break;
+			case 'speed_disable':
+				$this->handle_speed_disable();
 				break;
 		}
 	}
@@ -3333,5 +3370,121 @@ class RankWriter_AI_Admin {
 			'err'             => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/seo-healer.php';
+	}
+
+	/* ============================ Speed Optimizer ============================ */
+
+	private function handle_speed_optimize_now() {
+		check_admin_referer( self::SPEED_NONCE );
+		$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : 'balanced';
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->optimize_now( $mode );
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-optimized' ) ) );
+		exit;
+	}
+
+	private function handle_speed_save_settings() {
+		check_admin_referer( self::SPEED_NONCE );
+		$raw = isset( $_POST['rwai_speed'] ) ? (array) wp_unslash( $_POST['rwai_speed'] ) : array();
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->save_settings( $raw );
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-saved' ) ) );
+		exit;
+	}
+
+	private function handle_speed_clear_cache() {
+		check_admin_referer( self::SPEED_NONCE );
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			$so       = new RankWriter_AI_Speed_Optimizer();
+			$settings = $so->get_settings();
+			$cache    = new RankWriter_AI_Cache_Manager( WP_CONTENT_DIR . '/cache/rwai-speed', $settings );
+			$cache->purge_all();
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-cache-cleared' ) ) );
+		exit;
+	}
+
+	private function handle_speed_bulk_webp() {
+		check_admin_referer( self::SPEED_NONCE );
+		if ( ! class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG ) );
+			exit;
+		}
+		$settings = ( new RankWriter_AI_Speed_Optimizer() )->get_settings();
+		$result   = ( new RankWriter_AI_Image_Optimizer( $settings ) )->bulk_generate_webp( 50 );
+		if ( is_wp_error( $result ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-error', 'rwai_err' => rawurlencode( $result->get_error_message() ) ) ) );
+			exit;
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-images-done' ) ) );
+		exit;
+	}
+
+	private function handle_speed_db_clean() {
+		check_admin_referer( self::SPEED_NONCE );
+		if ( class_exists( 'RankWriter_AI_Database_Cleaner' ) ) {
+			( new RankWriter_AI_Database_Cleaner() )->run_all( 3 );
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-db-cleaned' ) ) );
+		exit;
+	}
+
+	private function handle_speed_run_test() {
+		check_admin_referer( self::SPEED_NONCE );
+		$url      = isset( $_POST['test_url'] ) ? esc_url_raw( wp_unslash( $_POST['test_url'] ) ) : home_url( '/' );
+		$strategy = isset( $_POST['strategy'] ) ? sanitize_key( wp_unslash( $_POST['strategy'] ) ) : 'mobile';
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			$result = ( new RankWriter_AI_Speed_Optimizer() )->fetch_pagespeed( $url, $strategy );
+			if ( is_wp_error( $result ) ) {
+				update_option( 'rwai_speed_psi_last', array( 'error' => $result->get_error_message() ), false );
+				wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-error', 'rwai_err' => rawurlencode( $result->get_error_message() ) ) ) );
+				exit;
+			}
+			update_option( 'rwai_speed_psi_last', $result, false );
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-saved' ) ) );
+		exit;
+	}
+
+	private function handle_speed_restore() {
+		check_admin_referer( self::SPEED_NONCE );
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->restore_previous();
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-restored' ) ) );
+		exit;
+	}
+
+	private function handle_speed_disable() {
+		check_admin_referer( self::SPEED_NONCE );
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->disable();
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::SPEED_SLUG, array( 'rwai_msg' => 'speed-disabled' ) ) );
+		exit;
+	}
+
+	public function render_speed() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( ! class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			echo '<div class="wrap"><h1>' . esc_html__( 'Speed Optimizer', 'rankwriter-ai' ) . '</h1><p>' . esc_html__( 'Speed Optimizer module unavailable.', 'rankwriter-ai' ) . '</p></div>';
+			return;
+		}
+		$so       = new RankWriter_AI_Speed_Optimizer();
+		$db       = new RankWriter_AI_Database_Cleaner();
+		$data = array(
+			'settings'    => $so->get_settings(),
+			'status'      => $so->status_snapshot(),
+			'db_preflight'=> $db->preflight_counts(),
+			'logs'        => RankWriter_AI_Speed_Logger::recent( 30 ),
+			'psi_last'    => (array) get_option( 'rwai_speed_psi_last', array() ),
+			'msg'         => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+			'err'         => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
+		);
+		require RWAI_PLUGIN_DIR . 'admin/partials/speed-optimizer.php';
 	}
 }

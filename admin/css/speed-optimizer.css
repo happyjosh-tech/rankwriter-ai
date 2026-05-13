@@ -1,0 +1,12 @@
+/*
+ * RankWriter Speed Optimizer admin screen styling.
+ * Re-uses the .rwai-card / .rwai-pill classes from admin.css so the new
+ * screen visually matches the rest of the plugin.
+ */
+.rwai-speed .rwai-card { margin-top: 16px; }
+.rwai-speed label { display: inline-block; padding: 2px 0; }
+.rwai-speed textarea { box-sizing: border-box; }
+.rwai-speed-settings .rwai-card { background: #fff; border: 1px solid #e2e4e7; border-radius: 6px; padding: 14px 18px; }
+.rwai-speed-settings .rwai-card h2 { font-size: 14px; margin: 0 0 8px; padding: 0; border: 0; }
+.rwai-speed-settings .rwai-card p { margin: 8px 0; }
+.rwai-pill-muted { background: #ececec; color: #555; padding: 2px 8px; border-radius: 10px; font-size: 11px; }

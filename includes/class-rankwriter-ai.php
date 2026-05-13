@@ -85,6 +85,11 @@ class RankWriter_AI {
 			RankWriter_AI_Language::register_hooks();
 		}
 
+		// RankWriter Site Speed Optimizer.
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->register_hooks();
+		}
+
 		// Auto-translate on publish (single deferred cron 5 min after publish).
 		add_action( 'save_post_post', array( $this, 'maybe_queue_auto_translate' ), 25, 3 );
 		add_action( 'rwai_auto_translate_run', array( $this, 'cron_auto_translate' ), 10, 2 );

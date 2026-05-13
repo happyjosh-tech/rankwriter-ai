@@ -84,6 +84,15 @@ class RankWriter_AI_Activator {
 			RankWriter_AI_SEO_Healer_DB::install();
 		}
 
+		// Create the Speed Optimizer cache dir up front so the first
+		// front-end request after activation doesn't race on mkdir.
+		// The orchestrator's ensure_cache_dir() also handles this, but
+		// running it on activation gives us the right ownership when
+		// the admin clicks "Activate" vs. a deferred first hit.
+		if ( class_exists( 'RankWriter_AI_Speed_Optimizer' ) ) {
+			( new RankWriter_AI_Speed_Optimizer() )->ensure_cache_dir();
+		}
+
 		// Seed the built-in category presets if none exist yet. Subsequent
 		// activations are non-destructive — already-existing or user-deleted
 		// presets are left alone (the user can re-seed via the admin button).

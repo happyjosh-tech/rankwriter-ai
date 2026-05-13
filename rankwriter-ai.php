@@ -3,7 +3,7 @@
  * Plugin Name:       RankWriter AI
  * Plugin URI:        https://github.com/happyjosh-tech/rankwriter-ai
  * Description:       AI-powered content generator that learns from your existing blog and supports unlimited custom category profiles. Built on Anthropic's Claude API.
- * Version:           1.1.2
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            RankWriter AI
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RWAI_VERSION', '1.1.2' );
+define( 'RWAI_VERSION', '1.2.0' );
 define( 'RWAI_PLUGIN_FILE', __FILE__ );
 define( 'RWAI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RWAI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -87,6 +87,23 @@ require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-refresher-db.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-content-refresher.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-legal-pages.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-github-updater.php';
+
+/**
+ * Speed Optimizer module (RankWriter Site Speed Optimizer).
+ * Each sub-module is its own file so the boot cost stays linear with
+ * features enabled — if a user disables CSS optimization, the class
+ * still loads but registers zero hooks.
+ */
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-speed-logger.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-cache-manager.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-browser-cache.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-css-optimizer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-js-optimizer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-image-optimizer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-database-cleaner.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-core-web-vitals.php';
+require_once RWAI_PLUGIN_DIR . 'includes/speed-optimizer/class-rwai-speed-optimizer.php';
+
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai.php';
 
 if ( is_admin() ) {

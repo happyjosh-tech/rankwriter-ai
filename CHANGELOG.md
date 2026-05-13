@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-13
+
+### Added — RankWriter Site Speed Optimizer
+
+A new admin screen (**RankWriter → Speed Optimizer**) with a one-click safe speed optimization pipeline built around a Safe / Balanced / Aggressive mode dial. Every action is reversible from a snapshot taken on first activation, so there's no path where the optimizer locks you out of recovery.
+
+**Static HTML page cache** with auto-purge on `save_post`, `wp_update_nav_menu`, `customize_save_after`, theme switch, and plugin install/activate. Bypasses logged-in users, REST, AJAX, cron, POST requests, WooCommerce cart / checkout / my-account, AMP, query-string URLs, and user-configured exclusions. Cache lives in `wp-content/cache/rwai-speed/` (survives plugin updates).
+
+**Browser caching** via `Cache-Control` + `Vary` headers from PHP, plus a copy-pasteable `.htaccess` snippet for 1-year cache on CSS / JS / images / fonts and Gzip. We do not auto-write `.htaccess` — that file is too fragile per-host to modify without explicit human review.
+
+**CSS optimization** — local stylesheet minify, optional defer-non-critical via the `media=print` swap pattern, and a critical-CSS textarea the admin can paste into (no auto-extraction promises).
+
+**JS optimization** — local script minify, `defer` on non-essential scripts, and delay-until-interaction for known analytics / social / chat scripts (Balanced) or all non-essentials (Aggressive). Protected list: jQuery, wp-i18n, AdSense (`adsbygoogle.js`, `pagead2`), GTM / GA, Stripe, PayPal, reCAPTCHA, WooCommerce checkout / cart, login.
+
+**Image optimization** — lazy-load via `loading="lazy"` + `decoding="async"` while skipping the first image (LCP), injection of missing `width` / `height` to reduce CLS, automatic WebP swap when a same-name `.webp` exists, and a bulk WebP generator that creates `.webp` alongside originals (never destructive).
+
+**Core Web Vitals nudges** — `fetchpriority="high"` on the first content image, `<link rel="preload" as="image">` for the featured image on single-post pages, and `<link rel="preload" as="font">` for a user-supplied font list.
+
+**Database cleanup** — opt-in, one-click cleanup of post revisions (configurable keep-N), auto-drafts, trashed posts, spam comments, expired transients, and orphan post-meta. Never touches users, orders, settings, options, plugin tables, or live content. Pre-flight counter shows exactly how many rows each category would delete before the user confirms.
+
+**PageSpeed Insights integration (optional)** — drop in a Google PSI API key and the screen fetches real mobile / desktop scores plus LCP, CLS, TBT, FCP. Without a key the screen still shows internal optimization status; we do not fabricate scores.
+
+**Activity log** — last 30 actions surfaced inline so users can audit what the optimizer did.
+
+**Rollback & disable** — *Restore previous settings* re-saves the pre-optimization snapshot and wipes the cache; *Disable Speed Optimizer* turns the module off without losing your configuration.
+
+### Files
+
+```
+includes/speed-optimizer/
+├── class-rwai-speed-logger.php
+├── class-rwai-cache-manager.php
+├── class-rwai-browser-cache.php
+├── class-rwai-css-optimizer.php
+├── class-rwai-js-optimizer.php
+├── class-rwai-image-optimizer.php
+├── class-rwai-database-cleaner.php
+├── class-rwai-core-web-vitals.php
+└── class-rwai-speed-optimizer.php
+admin/partials/speed-optimizer.php
+admin/css/speed-optimizer.css
+```
+
+[1.2.0]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.2.0
+
 ## [1.1.2] - 2026-05-13
 
 ### Added
