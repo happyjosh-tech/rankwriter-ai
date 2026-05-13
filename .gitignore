@@ -1,0 +1,32 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Dev tools
+node_modules/
+vendor/
+composer.lock
+package-lock.json
+build/
+dist/
+*.zip
+
+# WordPress / PHP
+wp-config.php
+*.log
+.phpunit.result.cache
+
+# Local environment
+.env
+.env.local
+*.sqlite
+debug.log
+
+# Secrets
+*.pem
+*.key
+secrets.json
