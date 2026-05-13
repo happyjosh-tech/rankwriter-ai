@@ -81,6 +81,15 @@ class RankWriter_AI_Speed_Optimizer {
 			'cwv_preload_fonts'       => 0,
 			'preload_font_urls'       => '',
 
+			// Page polish (added v1.2.1 — score-mover features)
+			'cwv_html_minify'         => 0,
+			'cwv_dns_prefetch'        => 1,
+			'cwv_disable_emojis'      => 0,
+			'cwv_remove_jquery_migrate'=> 0,
+			'cwv_disable_embeds'      => 0,
+			'cwv_google_fonts_swap'   => 1,
+			'dns_prefetch_hosts'      => '',
+
 			// PageSpeed
 			'pagespeed_api_key'       => '',
 		);
@@ -102,25 +111,39 @@ class RankWriter_AI_Speed_Optimizer {
 		$mode = isset( $settings['mode'] ) ? $settings['mode'] : self::MODE_BALANCED;
 		switch ( $mode ) {
 			case self::MODE_SAFE:
-				$settings['css_defer']   = 0;
-				$settings['js_defer']    = 0;
-				$settings['js_delay']    = 0;
-				$settings['image_webp']  = 0;
-				$settings['cwv_preload_fonts'] = 0;
+				$settings['css_defer']            = 0;
+				$settings['js_defer']             = 0;
+				$settings['js_delay']             = 0;
+				$settings['image_webp']           = 0;
+				$settings['cwv_preload_fonts']    = 0;
+				$settings['cwv_html_minify']      = 0;
+				$settings['cwv_disable_emojis']   = 0;
+				$settings['cwv_remove_jquery_migrate'] = 0;
+				$settings['cwv_disable_embeds']   = 0;
 				break;
 			case self::MODE_AGGRESSIVE:
-				$settings['css_defer']   = 1;
-				$settings['js_defer']    = 1;
-				$settings['js_delay']    = 1;
-				$settings['image_webp']  = 1;
+				$settings['css_defer']            = 1;
+				$settings['js_defer']             = 1;
+				$settings['js_delay']             = 1;
+				$settings['image_webp']           = 1;
+				$settings['cwv_html_minify']      = 1;
+				$settings['cwv_disable_emojis']   = 1;
+				$settings['cwv_remove_jquery_migrate'] = 1;
+				$settings['cwv_disable_embeds']   = 1;
+				$settings['cwv_google_fonts_swap']= 1;
+				$settings['cwv_dns_prefetch']     = 1;
 				break;
 			case self::MODE_BALANCED:
 			default:
 				// Balanced: defer JS but don't delay everything by default.
-				$settings['js_defer']    = 1;
-				$settings['js_delay']    = 1; // delay only the analytics/social candidates
-				$settings['image_webp']  = 1;
-				$settings['css_defer']   = 0;
+				$settings['js_defer']             = 1;
+				$settings['js_delay']             = 1; // delay only the analytics/social candidates
+				$settings['image_webp']           = 1;
+				$settings['css_defer']            = 0;
+				$settings['cwv_disable_emojis']   = 1;
+				$settings['cwv_google_fonts_swap']= 1;
+				$settings['cwv_dns_prefetch']     = 1;
+				$settings['cwv_html_minify']      = 1;
 				break;
 		}
 		return $settings;

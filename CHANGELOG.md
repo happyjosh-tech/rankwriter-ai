@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-13
+
+### Fixed
+
+- **Clear cache / Optimize images buttons returned a blank page.** Both were generated as `<a href="admin-post.php?rwai_action=...">` GET links, but the dispatcher only listens for `$_POST['rwai_action']` and `admin-post.php` exits silently when its required `action=` query param is missing. They also sat inside the settings form, which is invalid HTML (nested forms). Converted both to hidden POST mini-forms placed outside the settings form, with the buttons referencing them via the HTML5 `form=` attribute so they can sit anywhere in the page.
+
+### Added — Aggressive-mode score movers
+
+Five common Lighthouse / PSI complaints on WordPress sites that v1.2.0's Aggressive mode wasn't fixing yet. All on by default in Aggressive mode, mostly on in Balanced mode, off in Safe mode.
+
+- **HTML minification** — light-weight output minifier that strips comments and collapses whitespace between tags. Stashes `<pre>`, `<script>`, `<style>`, `<textarea>`, and IE conditional comments first so it never corrupts code or whitespace-significant content.
+- **DNS prefetch + preconnect** — emits `<link rel="dns-prefetch">` + `<link rel="preconnect">` for Google Fonts, GA, GTM, AdSense, and DoubleClick by default. User can override the host list.
+- **Google Fonts `display=swap` rewrite** — appends `&display=swap` to every `fonts.googleapis.com` stylesheet so text paints with the fallback font immediately (fixes Lighthouse's "Reduce text-rendering delay" almost every time).
+- **Disable WordPress emoji loader** — drops the inline emoji detection script + the s.w.org DNS lookup the emoji loader injects. Saves ~6 KB JS + an extra DNS round-trip on every page.
+- **Remove `jquery-migrate` dependency** — dequeues the migrate shim on the front-end (only safe with modern themes/plugins — toggle off if anything breaks).
+- **Disable WordPress oEmbed** — removes `wp-embed.js` + the oEmbed discovery `<link>` tags for sites that don't embed external posts.
+
+Each toggle is independently controllable from a new **Page polish (score-movers)** card on the Speed Optimizer screen, so users can keep the ones that fit their theme and skip the rest.
+
+[1.2.1]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.2.1
+
 ## [1.2.0] - 2026-05-13
 
 ### Added — RankWriter Site Speed Optimizer

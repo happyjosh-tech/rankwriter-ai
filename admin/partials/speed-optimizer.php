@@ -46,6 +46,19 @@ $bytes_fmt = function ( $b ) {
 		<div class="notice notice-error is-dismissible"><p><?php echo esc_html( $err ); ?></p></div>
 	<?php endif; ?>
 
+	<?php // Inline action forms placed OUTSIDE the main settings form so the
+		// buttons (which sit inside the settings card via the HTML5 `form=`
+		// attribute) submit to admin-post via real POST requests instead of
+		// the GET-link pattern that hit a blank page in v1.2.0. ?>
+	<form method="post" id="rwai-speed-form-clear-cache" style="display:none;">
+		<input type="hidden" name="rwai_action" value="speed_clear_cache" />
+		<?php wp_nonce_field( RankWriter_AI_Admin::SPEED_NONCE ); ?>
+	</form>
+	<form method="post" id="rwai-speed-form-bulk-webp" style="display:none;">
+		<input type="hidden" name="rwai_action" value="speed_bulk_webp" />
+		<?php wp_nonce_field( RankWriter_AI_Admin::SPEED_NONCE ); ?>
+	</form>
+
 	<!-- ====================== Top status row ====================== -->
 	<div class="rwai-cpc-summary-row">
 		<div class="rwai-cpc-summary-card">
@@ -123,7 +136,7 @@ $bytes_fmt = function ( $b ) {
 			<label><?php esc_html_e( 'Bypass cache for these URL fragments (one per line):', 'rankwriter-ai' ); ?></label>
 			<textarea name="rwai_speed[cache_exclusions]" rows="4" style="width:100%;font-family:monospace;font-size:12px;"><?php echo esc_textarea( (string) $settings['cache_exclusions'] ); ?></textarea>
 			<p>
-				<a href="<?php echo esc_url( add_query_arg( array( 'rwai_action' => 'speed_clear_cache', '_wpnonce' => wp_create_nonce( RankWriter_AI_Admin::SPEED_NONCE ) ), admin_url( 'admin-post.php' ) ) ); ?>" class="button"><?php esc_html_e( 'Clear cache now', 'rankwriter-ai' ); ?></a>
+				<button type="submit" form="rwai-speed-form-clear-cache" class="button"><?php esc_html_e( 'Clear cache now', 'rankwriter-ai' ); ?></button>
 			</p>
 		</div>
 
@@ -166,7 +179,7 @@ $bytes_fmt = function ( $b ) {
 			<label><input type="checkbox" name="rwai_speed[image_dims]" value="1" <?php checked( ! empty( $settings['image_dims'] ) ); ?> /> <?php esc_html_e( 'Inject missing width / height (reduces Cumulative Layout Shift)', 'rankwriter-ai' ); ?></label><br>
 			<label><input type="checkbox" name="rwai_speed[image_webp]" value="1" <?php checked( ! empty( $settings['image_webp'] ) ); ?> /> <?php esc_html_e( 'Serve WebP versions where available', 'rankwriter-ai' ); ?></label>
 			<p>
-				<a href="<?php echo esc_url( add_query_arg( array( 'rwai_action' => 'speed_bulk_webp', '_wpnonce' => wp_create_nonce( RankWriter_AI_Admin::SPEED_NONCE ) ), admin_url( 'admin-post.php' ) ) ); ?>" class="button"><?php esc_html_e( 'Optimize images (batch of 50)', 'rankwriter-ai' ); ?></a>
+				<button type="submit" form="rwai-speed-form-bulk-webp" class="button"><?php esc_html_e( 'Optimize images (batch of 50)', 'rankwriter-ai' ); ?></button>
 				<span class="rwai-muted"><?php
 					$st = (array) ( $status['image_stats'] ?? array() );
 					/* translators: %1$d generated, %2$d skipped */
@@ -183,6 +196,21 @@ $bytes_fmt = function ( $b ) {
 			<p>
 				<label><?php esc_html_e( 'Font URLs to preload (one per line):', 'rankwriter-ai' ); ?></label>
 				<textarea name="rwai_speed[preload_font_urls]" rows="3" style="width:100%;font-family:monospace;font-size:12px;" placeholder="https://example.com/wp-content/themes/your-theme/fonts/inter.woff2"><?php echo esc_textarea( (string) $settings['preload_font_urls'] ); ?></textarea>
+			</p>
+		</div>
+
+		<div class="rwai-card">
+			<h2><?php esc_html_e( 'Page polish (score-movers)', 'rankwriter-ai' ); ?></h2>
+			<p class="rwai-muted" style="margin-top:0;"><?php esc_html_e( 'Targeted nudges Lighthouse commonly flags on WordPress sites. Each is independently togglable so you can keep the ones that fit your theme and skip the rest.', 'rankwriter-ai' ); ?></p>
+			<label><input type="checkbox" name="rwai_speed[cwv_html_minify]" value="1" <?php checked( ! empty( $settings['cwv_html_minify'] ) ); ?> /> <?php esc_html_e( 'Minify HTML output (strips whitespace and comments; safe — leaves <pre>, <script>, <style>, conditional comments alone)', 'rankwriter-ai' ); ?></label><br>
+			<label><input type="checkbox" name="rwai_speed[cwv_dns_prefetch]" value="1" <?php checked( ! empty( $settings['cwv_dns_prefetch'] ) ); ?> /> <?php esc_html_e( 'DNS prefetch + preconnect for third-party hosts (Google Fonts, GA, GTM, AdSense by default)', 'rankwriter-ai' ); ?></label><br>
+			<label><input type="checkbox" name="rwai_speed[cwv_google_fonts_swap]" value="1" <?php checked( ! empty( $settings['cwv_google_fonts_swap'] ) ); ?> /> <?php esc_html_e( 'Rewrite Google Fonts to use display=swap (fixes "Reduce text-rendering delay")', 'rankwriter-ai' ); ?></label><br>
+			<label><input type="checkbox" name="rwai_speed[cwv_disable_emojis]" value="1" <?php checked( ! empty( $settings['cwv_disable_emojis'] ) ); ?> /> <?php esc_html_e( "Disable WordPress's emoji loader (saves ~6 KB JS + an extra DNS lookup)", 'rankwriter-ai' ); ?></label><br>
+			<label><input type="checkbox" name="rwai_speed[cwv_remove_jquery_migrate]" value="1" <?php checked( ! empty( $settings['cwv_remove_jquery_migrate'] ) ); ?> /> <?php esc_html_e( 'Remove jquery-migrate.js dependency (only safe if your theme/plugins are modern; turn off if anything breaks)', 'rankwriter-ai' ); ?></label><br>
+			<label><input type="checkbox" name="rwai_speed[cwv_disable_embeds]" value="1" <?php checked( ! empty( $settings['cwv_disable_embeds'] ) ); ?> /> <?php esc_html_e( "Disable WordPress oEmbed (removes wp-embed.js — leave on if you don't embed external posts)", 'rankwriter-ai' ); ?></label>
+			<p>
+				<label><?php esc_html_e( 'Custom DNS prefetch hosts (overrides defaults; one per line):', 'rankwriter-ai' ); ?></label>
+				<textarea name="rwai_speed[dns_prefetch_hosts]" rows="3" style="width:100%;font-family:monospace;font-size:12px;" placeholder="https://cdn.example.com&#10;https://images.example.net"><?php echo esc_textarea( (string) $settings['dns_prefetch_hosts'] ); ?></textarea>
 			</p>
 		</div>
 
