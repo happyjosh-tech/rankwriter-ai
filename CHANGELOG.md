@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-05-13
+
+### Added
+
+Inline manual-fix actions now exist for **every** SEO Healer rule, not just broken links. Each open issue row exposes a one-form repair so you never have to leave the dashboard:
+
+- **Missing / duplicate meta description** — inline textarea, type your own meta description and click Save.
+- **Missing alt text** — per-image inputs listing every flagged `<img>` source, type alt text for each and click Save.
+- **Duplicate title** — inline title field, edit and click Save title.
+- **Outdated SEO settings** — title + meta description inputs side-by-side, save either or both at once.
+- **Orphan post** — dropdown of related candidate source posts; pick one and click "Add inbound link" to inject a "Related reading" reference into that source, clearing the orphan flag.
+- **Thin content** — "Expand with Claude" button with target word-count input.
+- **Weak headings** — "Restructure headings with Claude" button that adds proper H2/H3 spacing while preserving every existing sentence.
+
+Each manual fix is logged to the repair log with a before/after snapshot, so the existing Rollback flow works for these too.
+
+### Changed
+
+- Rollback support extended to cover the new manual rules (duplicate title, thin content, weak headings).
+- Orphan-post repairs cannot be auto-rolled-back (they edit a *different* post) — the repair log shows a clear message explaining how to undo manually.
+
+[1.1.2]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.1.2
+
 ## [1.1.1] - 2026-05-13
 
 ### Fixed

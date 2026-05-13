@@ -538,6 +538,27 @@ class RankWriter_AI_Admin {
 			case 'healer_dismiss_issue':
 				$this->handle_healer_dismiss_issue();
 				break;
+			case 'healer_save_meta_desc':
+				$this->handle_healer_save_meta_desc();
+				break;
+			case 'healer_save_alt_texts':
+				$this->handle_healer_save_alt_texts();
+				break;
+			case 'healer_save_title':
+				$this->handle_healer_save_title();
+				break;
+			case 'healer_save_title_and_meta':
+				$this->handle_healer_save_title_and_meta();
+				break;
+			case 'healer_add_inbound_link':
+				$this->handle_healer_add_inbound_link();
+				break;
+			case 'healer_expand_thin':
+				$this->handle_healer_expand_thin();
+				break;
+			case 'healer_rewrite_headings':
+				$this->handle_healer_rewrite_headings();
+				break;
 		}
 	}
 
@@ -3143,6 +3164,123 @@ class RankWriter_AI_Admin {
 		exit;
 	}
 
+	private function handle_healer_save_meta_desc() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id  = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		$new_desc = isset( $_POST['meta_desc'] ) ? wp_unslash( $_POST['meta_desc'] ) : '';
+		$rule     = isset( $_POST['rule'] ) ? sanitize_key( wp_unslash( $_POST['rule'] ) ) : 'missing_meta_description';
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->save_meta_description_for_post( $post_id, $new_desc, $rule );
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function handle_healer_save_alt_texts() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		$alts    = isset( $_POST['alts'] ) ? (array) wp_unslash( $_POST['alts'] ) : array();
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->save_alt_texts_for_post( $post_id, $alts );
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function handle_healer_save_title() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id   = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		$new_title = isset( $_POST['new_title'] ) ? wp_unslash( $_POST['new_title'] ) : '';
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->save_post_title( $post_id, $new_title );
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function handle_healer_save_title_and_meta() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id   = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		$new_title = isset( $_POST['new_title'] ) ? wp_unslash( $_POST['new_title'] ) : '';
+		$new_desc  = isset( $_POST['meta_desc'] ) ? wp_unslash( $_POST['meta_desc'] ) : '';
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$healer = new RankWriter_AI_SEO_Healer();
+		$errors = array();
+		if ( '' !== trim( wp_strip_all_tags( $new_title ) ) ) {
+			$r1 = $healer->save_post_title( $post_id, $new_title );
+			if ( is_wp_error( $r1 ) && 'rwai_no_change' !== $r1->get_error_code() ) {
+				$errors[] = $r1->get_error_message();
+			}
+		}
+		if ( '' !== trim( wp_strip_all_tags( $new_desc ) ) ) {
+			$r2 = $healer->save_meta_description_for_post( $post_id, $new_desc, 'outdated_seo_settings' );
+			if ( is_wp_error( $r2 ) ) {
+				$errors[] = $r2->get_error_message();
+			}
+		}
+		if ( ! empty( $errors ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( implode( ' · ', $errors ) ) ) ) );
+			exit;
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-fixed' ) ) );
+		exit;
+	}
+
+	private function handle_healer_add_inbound_link() {
+		check_admin_referer( self::HEALER_NONCE );
+		$source_id = isset( $_POST['source_id'] ) ? absint( $_POST['source_id'] ) : 0;
+		$orphan_id = isset( $_POST['orphan_id'] ) ? absint( $_POST['orphan_id'] ) : 0;
+		if ( ! $source_id || ! $orphan_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Source or orphan post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->add_inbound_link( $source_id, $orphan_id );
+		// "rwai_already_linked" is a soft-success: we cleared the stale flag.
+		if ( is_wp_error( $result ) && 'rwai_already_linked' === $result->get_error_code() ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-dismissed' ) ) );
+			exit;
+		}
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function handle_healer_expand_thin() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		$target  = isset( $_POST['target_words'] ) ? absint( $_POST['target_words'] ) : 600;
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->expand_thin_content( $post_id, $target );
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function handle_healer_rewrite_headings() {
+		check_admin_referer( self::HEALER_NONCE );
+		$post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		if ( ! $post_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Post not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->rewrite_headings( $post_id );
+		$this->healer_redirect_for_result( $result, 'healer-fixed' );
+	}
+
+	private function healer_redirect_for_result( $result, $success_msg ) {
+		if ( is_wp_error( $result ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( $result->get_error_message() ) ) ) );
+			exit;
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => $success_msg ) ) );
+		exit;
+	}
+
 	public function render_healer() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
@@ -3156,12 +3294,36 @@ class RankWriter_AI_Admin {
 		if ( ! empty( $_GET['rule'] ) ) {
 			$filter['rule'] = sanitize_key( wp_unslash( $_GET['rule'] ) );
 		}
+		$issues = RankWriter_AI_SEO_Healer_DB::open_issues( 100, $filter );
+		// Pre-compute per-issue extras the partial needs to render inline
+		// manual-fix forms (orphan candidates, current title/meta, etc.).
+		$extras = array();
+		foreach ( $issues as $issue ) {
+			$pid  = (int) $issue['post_id'];
+			$rule = $issue['rule'];
+			$row  = array();
+			switch ( $rule ) {
+				case RankWriter_AI_SEO_Healer::RULE_NO_META_DESC:
+				case RankWriter_AI_SEO_Healer::RULE_DUP_META_DESC:
+				case RankWriter_AI_SEO_Healer::RULE_OUTDATED_SEO:
+					$row['current_meta_desc'] = $healer->read_meta_description( $pid );
+					break;
+			}
+			if ( RankWriter_AI_SEO_Healer::RULE_DUP_TITLE === $rule || RankWriter_AI_SEO_Healer::RULE_OUTDATED_SEO === $rule ) {
+				$row['current_title'] = get_the_title( $pid );
+			}
+			if ( RankWriter_AI_SEO_Healer::RULE_ORPHAN === $rule ) {
+				$row['orphan_candidates'] = $healer->find_inbound_candidates_for_orphan( $pid, 5 );
+			}
+			$extras[ (int) $issue['id'] ] = $row;
+		}
 		$data = array(
 			'settings'        => $healer->get_settings(),
 			'counts'          => RankWriter_AI_SEO_Healer_DB::counts_by_rule(),
 			'severity_totals' => RankWriter_AI_SEO_Healer_DB::severity_totals(),
 			'total_open'      => RankWriter_AI_SEO_Healer_DB::total_open(),
-			'issues'          => RankWriter_AI_SEO_Healer_DB::open_issues( 100, $filter ),
+			'issues'          => $issues,
+			'issue_extras'    => $extras,
 			'repairs'         => RankWriter_AI_SEO_Healer_DB::recent_repairs( 30 ),
 			'health_score'    => $healer->health_score(),
 			'next_scan'       => wp_next_scheduled( RankWriter_AI_SEO_Healer::CRON_HOOK_SCAN ),

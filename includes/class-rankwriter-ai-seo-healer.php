@@ -828,6 +828,308 @@ class RankWriter_AI_SEO_Healer {
 		return true;
 	}
 
+	/* ============================ Manual per-rule fixers ============================ */
+
+	/**
+	 * Write the user-supplied meta description to all SEO-plugin keys and
+	 * log the repair so it's rollback-able.
+	 */
+	public function save_meta_description_for_post( $post_id, $new_desc, $rule = self::RULE_NO_META_DESC ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'rwai_no_post', __( 'Post not found.', 'rankwriter-ai' ) );
+		}
+		$new_desc = trim( wp_strip_all_tags( (string) $new_desc ) );
+		if ( '' === $new_desc ) {
+			return new WP_Error( 'rwai_empty', __( 'Meta description cannot be empty.', 'rankwriter-ai' ) );
+		}
+		$new_desc = mb_substr( $new_desc, 0, 170 );
+		$before   = $this->read_meta_description( $post->ID );
+		$this->write_meta_description( $post->ID, $new_desc );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $post->ID,
+			'rule'         => $rule,
+			'source'       => 'manual',
+			'before_value' => $before,
+			'after_value'  => $new_desc,
+			'notes'        => __( 'Manually saved a custom meta description.', 'rankwriter-ai' ),
+		) );
+		$this->scan_post( $post->ID );
+		return array( 'before' => $before, 'after' => $new_desc );
+	}
+
+	/**
+	 * Write a new post_title. Used by the duplicate-title and outdated-SEO
+	 * inline fixers.
+	 */
+	public function save_post_title( $post_id, $new_title ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'rwai_no_post', __( 'Post not found.', 'rankwriter-ai' ) );
+		}
+		$new_title = trim( wp_strip_all_tags( (string) $new_title ) );
+		if ( '' === $new_title ) {
+			return new WP_Error( 'rwai_empty', __( 'Title cannot be empty.', 'rankwriter-ai' ) );
+		}
+		$before = $post->post_title;
+		if ( $before === $new_title ) {
+			return new WP_Error( 'rwai_no_change', __( 'New title is identical to the existing one.', 'rankwriter-ai' ) );
+		}
+		wp_update_post( array( 'ID' => $post->ID, 'post_title' => $new_title ) );
+		clean_post_cache( $post->ID );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $post->ID,
+			'rule'         => self::RULE_DUP_TITLE,
+			'source'       => 'manual',
+			'before_value' => $before,
+			'after_value'  => $new_title,
+			'notes'        => sprintf( __( 'Renamed post title: "%1$s" → "%2$s".', 'rankwriter-ai' ), $before, $new_title ),
+		) );
+		// Title change can resolve dup-title AND outdated-seo simultaneously.
+		$this->refresh_duplicate_caches();
+		$this->scan_post( $post->ID );
+		return array( 'before' => $before, 'after' => $new_title );
+	}
+
+	/**
+	 * Apply user-supplied alt text to specific <img src=...> tags in the
+	 * post body. $src_to_alt is an assoc array: image src URL => alt text.
+	 */
+	public function save_alt_texts_for_post( $post_id, array $src_to_alt ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'rwai_no_post', __( 'Post not found.', 'rankwriter-ai' ) );
+		}
+		$clean = array();
+		foreach ( $src_to_alt as $src => $alt ) {
+			$src = trim( (string) $src );
+			$alt = trim( wp_strip_all_tags( (string) $alt ) );
+			if ( '' !== $src && '' !== $alt ) {
+				$clean[ $src ] = mb_substr( $alt, 0, 200 );
+			}
+		}
+		if ( empty( $clean ) ) {
+			return new WP_Error( 'rwai_empty', __( 'Provide at least one alt text.', 'rankwriter-ai' ) );
+		}
+		$before  = $post->post_content;
+		$fixed   = 0;
+		$updated = preg_replace_callback( '#<img\b([^>]*)>#is', function ( $m ) use ( $clean, &$fixed ) {
+			$attrs = $m[1];
+			if ( ! preg_match( '/\bsrc\s*=\s*"([^"]+)"/i', $attrs, $src ) ) {
+				return $m[0];
+			}
+			$key = $src[1];
+			if ( ! isset( $clean[ $key ] ) ) {
+				return $m[0];
+			}
+			$alt_attr = ' alt="' . esc_attr( $clean[ $key ] ) . '"';
+			if ( preg_match( '/\balt\s*=\s*"([^"]*)"/i', $attrs ) ) {
+				$attrs = preg_replace( '/\balt\s*=\s*"[^"]*"/i', trim( $alt_attr ), $attrs );
+			} else {
+				$attrs .= $alt_attr;
+			}
+			$fixed++;
+			return '<img' . $attrs . '>';
+		}, $before );
+
+		if ( $fixed === 0 ) {
+			return new WP_Error( 'rwai_no_match', __( 'None of the provided image URLs matched <img> tags in this post.', 'rankwriter-ai' ) );
+		}
+		wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( $updated ) ) );
+		clean_post_cache( $post->ID );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $post->ID,
+			'rule'         => self::RULE_NO_ALT,
+			'source'       => 'manual',
+			'before_value' => $before,
+			'after_value'  => $updated,
+			'notes'        => sprintf( _n( 'Manually wrote alt text for %d image.', 'Manually wrote alt text for %d images.', $fixed, 'rankwriter-ai' ), $fixed ),
+		) );
+		$this->scan_post( $post->ID );
+		return array( 'before' => $before, 'after' => $updated, 'fixed' => $fixed );
+	}
+
+	/**
+	 * For an orphan post, return up to $limit candidate source posts to
+	 * link FROM. Prefers posts in the same WP categories, falls back to
+	 * recent published posts.
+	 */
+	public function find_inbound_candidates_for_orphan( $orphan_post_id, $limit = 5 ) {
+		$post = get_post( (int) $orphan_post_id );
+		if ( ! $post ) {
+			return array();
+		}
+		global $wpdb;
+		$cat_ids = wp_get_post_categories( $post->ID );
+		$candidates = array();
+		if ( ! empty( $cat_ids ) ) {
+			$q = new WP_Query( array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'category__in'   => $cat_ids,
+				'post__not_in'   => array( $post->ID ),
+				'posts_per_page' => (int) $limit,
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'no_found_rows'  => true,
+			) );
+			foreach ( $q->posts as $p ) {
+				$candidates[ $p->ID ] = $p;
+			}
+		}
+		if ( count( $candidates ) < $limit ) {
+			$need = $limit - count( $candidates );
+			$existing_ids = array_merge( array( $post->ID ), array_keys( $candidates ) );
+			$q2 = new WP_Query( array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'post__not_in'   => $existing_ids,
+				'posts_per_page' => $need,
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'no_found_rows'  => true,
+			) );
+			foreach ( $q2->posts as $p ) {
+				$candidates[ $p->ID ] = $p;
+			}
+		}
+		$out = array();
+		foreach ( $candidates as $p ) {
+			$out[] = array(
+				'id'        => $p->ID,
+				'title'     => $p->post_title,
+				'permalink' => get_permalink( $p->ID ),
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Inject an inbound link from $source_post_id → $orphan_post_id by
+	 * appending a one-line "Related reading" paragraph to the source post.
+	 */
+	public function add_inbound_link( $source_post_id, $orphan_post_id ) {
+		$source = get_post( (int) $source_post_id );
+		$orphan = get_post( (int) $orphan_post_id );
+		if ( ! $source || ! $orphan ) {
+			return new WP_Error( 'rwai_no_post', __( 'Source or orphan post not found.', 'rankwriter-ai' ) );
+		}
+		$orphan_url   = get_permalink( $orphan->ID );
+		$orphan_title = $orphan->post_title;
+		// If the source already links to the orphan, abort cleanly.
+		if ( false !== strpos( $source->post_content, $orphan_url ) ) {
+			RankWriter_AI_SEO_Healer_DB::clear_issue( $orphan->ID, self::RULE_ORPHAN );
+			return new WP_Error( 'rwai_already_linked', __( 'That source post already links to this article — the orphan flag has been cleared.', 'rankwriter-ai' ) );
+		}
+		$snippet = "\n\n<p><em>" . esc_html__( 'Related reading:', 'rankwriter-ai' ) . " <a href=\"" . esc_url( $orphan_url ) . "\">" . esc_html( $orphan_title ) . "</a>.</em></p>";
+		$before  = $source->post_content;
+		$updated = $before . $snippet;
+		wp_update_post( array( 'ID' => $source->ID, 'post_content' => wp_slash( $updated ) ) );
+		clean_post_cache( $source->ID );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $orphan->ID,
+			'rule'         => self::RULE_ORPHAN,
+			'source'       => 'manual',
+			'before_value' => '', // before/after lives on a DIFFERENT post (the source)
+			'after_value'  => '',
+			'notes'        => sprintf( __( 'Added inbound link from "%1$s" (#%2$d) to clear orphan flag.', 'rankwriter-ai' ), $source->post_title, $source->ID ),
+		) );
+		// Re-scan the orphan AND the source.
+		$this->scan_post( $source->ID );
+		$this->scan_post( $orphan->ID );
+		return array( 'before' => $before, 'after' => $updated );
+	}
+
+	/**
+	 * Send the post body to Claude with an "expand to ≥ X words" prompt and
+	 * save the result. Falls back to WP_Error if Claude is unavailable.
+	 */
+	public function expand_thin_content( $post_id, $target_words = 600 ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'rwai_no_post', __( 'Post not found.', 'rankwriter-ai' ) );
+		}
+		if ( ! class_exists( 'RankWriter_AI_Claude_Client' ) ) {
+			return new WP_Error( 'rwai_no_claude', __( 'Claude client unavailable.', 'rankwriter-ai' ) );
+		}
+		$client = new RankWriter_AI_Claude_Client();
+		if ( ! $client->is_configured() ) {
+			return new WP_Error( 'rwai_no_claude_key', __( 'Add a Claude API key in Settings to use AI expansion.', 'rankwriter-ai' ) );
+		}
+		$target_words = max( 400, (int) $target_words );
+		$system = "Expand the article below to at least {$target_words} words while preserving the existing structure, headings, links, and HTML. Add depth — concrete examples, specifics, supporting detail. Do NOT add fluff phrases ('in today's world', 'in conclusion', etc.). Return ONLY the expanded HTML — no preamble, no markdown fences.";
+		$user   = "Title: " . $post->post_title . "\n\nCurrent body:\n" . $post->post_content;
+		$raw    = $client->send( $system, array( array( 'role' => 'user', 'content' => $user ) ) );
+		if ( is_wp_error( $raw ) ) {
+			return $raw;
+		}
+		$new = trim( (string) $raw );
+		$new = preg_replace( '/^```(?:html)?\n?|\n?```$/m', '', $new );
+		if ( strlen( $new ) < strlen( $post->post_content ) ) {
+			return new WP_Error( 'rwai_no_expand', __( 'Claude returned content shorter than the original — aborting.', 'rankwriter-ai' ) );
+		}
+		$before = $post->post_content;
+		wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( $new ) ) );
+		clean_post_cache( $post->ID );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $post->ID,
+			'rule'         => self::RULE_THIN,
+			'source'       => 'manual',
+			'before_value' => $before,
+			'after_value'  => $new,
+			'notes'        => sprintf( __( 'Expanded thin content via Claude (target ≥ %d words).', 'rankwriter-ai' ), $target_words ),
+		) );
+		$this->scan_post( $post->ID );
+		return array( 'before' => $before, 'after' => $new );
+	}
+
+	/**
+	 * Ask Claude to restructure the article body with proper H2/H3 spacing.
+	 */
+	public function rewrite_headings( $post_id ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'rwai_no_post', __( 'Post not found.', 'rankwriter-ai' ) );
+		}
+		if ( ! class_exists( 'RankWriter_AI_Claude_Client' ) ) {
+			return new WP_Error( 'rwai_no_claude', __( 'Claude client unavailable.', 'rankwriter-ai' ) );
+		}
+		$client = new RankWriter_AI_Claude_Client();
+		if ( ! $client->is_configured() ) {
+			return new WP_Error( 'rwai_no_claude_key', __( 'Add a Claude API key in Settings to use AI restructuring.', 'rankwriter-ai' ) );
+		}
+		$system = "Restructure the article below by adding 2-4 well-spaced <h2> subheadings (and where helpful, <h3> sub-subheadings) so the piece scans cleanly. Preserve every existing sentence, link, and inline tag — only inject new heading tags between existing paragraphs. Return ONLY the restructured HTML, no preamble, no markdown fences.";
+		$user   = "Title: " . $post->post_title . "\n\nCurrent body:\n" . $post->post_content;
+		$raw    = $client->send( $system, array( array( 'role' => 'user', 'content' => $user ) ) );
+		if ( is_wp_error( $raw ) ) {
+			return $raw;
+		}
+		$new = trim( (string) $raw );
+		$new = preg_replace( '/^```(?:html)?\n?|\n?```$/m', '', $new );
+		if ( preg_match_all( '#<h2\b#i', $new ) < 2 ) {
+			return new WP_Error( 'rwai_not_enough_h2', __( "Claude's rewrite still doesn't have ≥ 2 H2 headings — try again.", 'rankwriter-ai' ) );
+		}
+		$before = $post->post_content;
+		wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( $new ) ) );
+		clean_post_cache( $post->ID );
+
+		RankWriter_AI_SEO_Healer_DB::log_repair( array(
+			'post_id'      => $post->ID,
+			'rule'         => self::RULE_WEAK_HEADINGS,
+			'source'       => 'manual',
+			'before_value' => $before,
+			'after_value'  => $new,
+			'notes'        => __( 'Restructured headings via Claude.', 'rankwriter-ai' ),
+		) );
+		$this->scan_post( $post->ID );
+		return array( 'before' => $before, 'after' => $new );
+	}
+
 	/* ============================ Rollback ============================ */
 
 	public function rollback_repair( $log_id ) {
@@ -846,12 +1148,18 @@ class RankWriter_AI_SEO_Healer {
 		switch ( $row['rule'] ) {
 			case self::RULE_NO_ALT:
 			case self::RULE_BROKEN_LINK:
+			case self::RULE_THIN:
+			case self::RULE_WEAK_HEADINGS:
 				// Restore the entire post_content snapshot.
 				wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( (string) $row['before_value'] ) ) );
 				break;
 			case self::RULE_NO_META_DESC:
 			case self::RULE_DUP_META_DESC:
 				$this->write_meta_description( $post->ID, (string) $row['before_value'] );
+				break;
+			case self::RULE_DUP_TITLE:
+				wp_update_post( array( 'ID' => $post->ID, 'post_title' => (string) $row['before_value'] ) );
+				$this->refresh_duplicate_caches();
 				break;
 			case self::RULE_NO_SCHEMA:
 				$decoded = json_decode( (string) $row['before_value'], true );
@@ -861,6 +1169,10 @@ class RankWriter_AI_SEO_Healer {
 					delete_post_meta( $post->ID, '_rwai_schema_graph' );
 				}
 				break;
+			case self::RULE_ORPHAN:
+				// Orphan repairs edited a DIFFERENT post (the source) and the
+				// before/after snapshot wasn't recorded. Surface as no-rollback.
+				return new WP_Error( 'rwai_no_rollback', __( 'Inbound-link repairs cannot be auto-rolled-back — manually remove the link from the source post if needed.', 'rankwriter-ai' ) );
 			default:
 				return new WP_Error( 'rwai_no_rollback', __( 'Rollback not supported for this rule.', 'rankwriter-ai' ) );
 		}

@@ -8,6 +8,7 @@ $counts     = (array) ( $data['counts'] ?? array() );
 $severity   = (array) ( $data['severity_totals'] ?? array() );
 $total      = (int) ( $data['total_open'] ?? 0 );
 $issues     = (array) ( $data['issues'] ?? array() );
+$issue_extras = (array) ( $data['issue_extras'] ?? array() );
 $repairs    = (array) ( $data['repairs'] ?? array() );
 $health     = (int) ( $data['health_score'] ?? 100 );
 $next_scan  = (int) ( $data['next_scan'] ?? 0 );
@@ -150,6 +151,17 @@ $health_band = $health >= 80 ? 'rwai-tl-bar-ok' : ( $health >= 50 ? 'rwai-tl-bar
 					$label  = $rule_labels[ $rule ] ?? $rule;
 					$ctx    = json_decode( (string) $issue['context_json'], true );
 					$broken_links = ( 'broken_internal_link' === $rule && is_array( $ctx ) && ! empty( $ctx['broken'] ) ) ? (array) $ctx['broken'] : array();
+					$extras    = (array) ( $issue_extras[ (int) $issue['id'] ] ?? array() );
+					$alt_srcs  = ( 'missing_alt_text' === $rule && is_array( $ctx ) && ! empty( $ctx['src_samples'] ) ) ? (array) $ctx['src_samples'] : array();
+					$orph_cands = (array) ( $extras['orphan_candidates'] ?? array() );
+					$cur_title = (string) ( $extras['current_title'] ?? '' );
+					$cur_meta  = (string) ( $extras['current_meta_desc'] ?? '' );
+					$has_subform = (
+						in_array( $rule, array( 'missing_meta_description', 'duplicate_meta_description', 'duplicate_title', 'outdated_seo_settings', 'thin_content', 'weak_headings' ), true )
+						|| ! empty( $broken_links )
+						|| ( 'missing_alt_text' === $rule && ! empty( $alt_srcs ) )
+						|| ( 'orphan_post' === $rule && ! empty( $orph_cands ) )
+					);
 				?>
 					<tr>
 						<td><span class="rwai-pill <?php echo esc_attr( rwai_healer_sev_pill( $issue['severity'] ) ); ?>"><?php echo esc_html( strtoupper( $issue['severity'] ) ); ?></span></td>
@@ -223,6 +235,147 @@ $health_band = $health >= 80 ? 'rwai-tl-bar-ok' : ( $health >= 50 ? 'rwai-tl-bar
 									<?php endforeach; ?>
 									</tbody>
 								</table>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Missing / duplicate meta description ─── */ ?>
+					<?php if ( in_array( $rule, array( 'missing_meta_description', 'duplicate_meta_description' ), true ) ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;">
+								<form method="post" style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;">
+									<input type="hidden" name="rwai_action" value="healer_save_meta_desc" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<input type="hidden" name="rule" value="<?php echo esc_attr( $rule ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<label style="font-size:12px;color:#555;"><?php esc_html_e( 'Write a custom meta description (110–160 chars is the sweet spot):', 'rankwriter-ai' ); ?></label>
+									<textarea name="meta_desc" rows="2" maxlength="170" required style="width:100%;font-family:inherit;" placeholder="<?php esc_attr_e( 'Type the meta description for this post…', 'rankwriter-ai' ); ?>"><?php echo esc_textarea( $cur_meta ); ?></textarea>
+									<div>
+										<button type="submit" class="button button-small button-primary"><?php esc_html_e( 'Save meta description', 'rankwriter-ai' ); ?></button>
+										<span class="rwai-muted" style="margin-left:8px;font-size:11px;"><?php esc_html_e( 'Or use the Auto-fix button above to let Claude write one.', 'rankwriter-ai' ); ?></span>
+									</div>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Missing alt text — per-image inputs ─── */ ?>
+					<?php if ( 'missing_alt_text' === $rule && ! empty( $alt_srcs ) ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;padding:0;">
+								<form method="post" style="padding:10px 12px;">
+									<input type="hidden" name="rwai_action" value="healer_save_alt_texts" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<div style="font-size:12px;color:#555;margin-bottom:6px;"><?php esc_html_e( 'Type alt text for each image (leave blank to skip):', 'rankwriter-ai' ); ?></div>
+									<table style="width:100%;border-collapse:collapse;font-size:13px;">
+										<?php foreach ( $alt_srcs as $src ) : ?>
+											<tr>
+												<td style="padding:4px 6px;width:42%;"><code style="background:#f6f7f9;padding:2px 6px;border-radius:3px;word-break:break-all;font-size:11px;"><?php echo esc_html( $src ); ?></code></td>
+												<td style="padding:4px 6px;"><input type="text" name="alts[<?php echo esc_attr( $src ); ?>]" placeholder="<?php esc_attr_e( 'Alt text for this image', 'rankwriter-ai' ); ?>" style="width:100%;" /></td>
+											</tr>
+										<?php endforeach; ?>
+									</table>
+									<div style="margin-top:8px;">
+										<button type="submit" class="button button-small button-primary"><?php esc_html_e( 'Save alt texts', 'rankwriter-ai' ); ?></button>
+										<span class="rwai-muted" style="margin-left:8px;font-size:11px;"><?php esc_html_e( 'Or use Auto-fix to let Claude generate them.', 'rankwriter-ai' ); ?></span>
+									</div>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Duplicate title ─── */ ?>
+					<?php if ( 'duplicate_title' === $rule ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;">
+								<form method="post" style="display:flex;gap:6px;align-items:center;padding:10px 12px;flex-wrap:wrap;">
+									<input type="hidden" name="rwai_action" value="healer_save_title" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<label style="font-size:12px;color:#555;"><?php esc_html_e( 'New unique title:', 'rankwriter-ai' ); ?></label>
+									<input type="text" name="new_title" value="<?php echo esc_attr( $cur_title ); ?>" required style="flex:1;min-width:280px;" />
+									<button type="submit" class="button button-small button-primary"><?php esc_html_e( 'Save title', 'rankwriter-ai' ); ?></button>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Outdated SEO settings — title + meta inline ─── */ ?>
+					<?php if ( 'outdated_seo_settings' === $rule ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;">
+								<form method="post" style="display:flex;flex-direction:column;gap:8px;padding:10px 12px;">
+									<input type="hidden" name="rwai_action" value="healer_save_title_and_meta" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<label style="font-size:12px;color:#555;"><?php esc_html_e( 'Title (≤ 60 chars is best):', 'rankwriter-ai' ); ?></label>
+									<input type="text" name="new_title" value="<?php echo esc_attr( $cur_title ); ?>" maxlength="100" style="width:100%;" />
+									<label style="font-size:12px;color:#555;"><?php esc_html_e( 'Meta description (110–160 chars):', 'rankwriter-ai' ); ?></label>
+									<textarea name="meta_desc" rows="2" maxlength="170" style="width:100%;font-family:inherit;"><?php echo esc_textarea( $cur_meta ); ?></textarea>
+									<div>
+										<button type="submit" class="button button-small button-primary"><?php esc_html_e( 'Save title & meta', 'rankwriter-ai' ); ?></button>
+										<span class="rwai-muted" style="margin-left:8px;font-size:11px;"><?php esc_html_e( 'Leave a field empty to skip it.', 'rankwriter-ai' ); ?></span>
+									</div>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Orphan post — pick a source to link from ─── */ ?>
+					<?php if ( 'orphan_post' === $rule && ! empty( $orph_cands ) ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;padding:10px 12px;">
+								<div style="font-size:12px;color:#555;margin-bottom:6px;"><?php esc_html_e( 'Pick a related post — we\'ll add a "Related reading" link from it back to this orphan:', 'rankwriter-ai' ); ?></div>
+								<form method="post" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+									<input type="hidden" name="rwai_action" value="healer_add_inbound_link" />
+									<input type="hidden" name="orphan_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<select name="source_id" required style="min-width:340px;">
+										<?php foreach ( $orph_cands as $cand ) : ?>
+											<option value="<?php echo esc_attr( $cand['id'] ); ?>"><?php echo esc_html( wp_trim_words( $cand['title'], 14 ) ); ?></option>
+										<?php endforeach; ?>
+									</select>
+									<button type="submit" class="button button-small button-primary"><?php esc_html_e( 'Add inbound link', 'rankwriter-ai' ); ?></button>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Thin content — Claude expand ─── */ ?>
+					<?php if ( 'thin_content' === $rule ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;">
+								<form method="post" style="display:flex;gap:6px;align-items:center;padding:10px 12px;flex-wrap:wrap;" onsubmit="return confirm('<?php echo esc_attr( __( "Send this post to Claude to expand? The current content will be replaced with the expanded version (rollback available from the repair log).", 'rankwriter-ai' ) ); ?>');">
+									<input type="hidden" name="rwai_action" value="healer_expand_thin" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<label style="font-size:12px;color:#555;"><?php esc_html_e( 'Expand to at least:', 'rankwriter-ai' ); ?></label>
+									<input type="number" name="target_words" value="600" min="400" max="3000" step="50" style="width:90px;" />
+									<span style="font-size:12px;color:#555;"><?php esc_html_e( 'words', 'rankwriter-ai' ); ?></span>
+									<button type="submit" class="button button-small button-primary"><?php esc_html_e( '✨ Expand with Claude', 'rankwriter-ai' ); ?></button>
+								</form>
+							</td>
+						</tr>
+					<?php endif; ?>
+
+					<?php /* ─── Weak headings — Claude restructure ─── */ ?>
+					<?php if ( 'weak_headings' === $rule ) : ?>
+						<tr>
+							<td></td>
+							<td colspan="4" style="background:#fbfbfc;">
+								<form method="post" style="padding:10px 12px;" onsubmit="return confirm('<?php echo esc_attr( __( "Ask Claude to restructure this post's headings? The body will be rewritten with new H2/H3 tags (rollback available).", 'rankwriter-ai' ) ); ?>');">
+									<input type="hidden" name="rwai_action" value="healer_rewrite_headings" />
+									<input type="hidden" name="post_id" value="<?php echo esc_attr( $pid ); ?>" />
+									<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+									<button type="submit" class="button button-small button-primary"><?php esc_html_e( '✨ Restructure headings with Claude', 'rankwriter-ai' ); ?></button>
+								</form>
 							</td>
 						</tr>
 					<?php endif; ?>
