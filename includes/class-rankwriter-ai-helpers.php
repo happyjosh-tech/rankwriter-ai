@@ -22,6 +22,16 @@ class RankWriter_AI_Helpers {
 			'default_country'        => 'US',
 			'pexels_api_key'         => '',
 			'unsplash_access_key'    => '',
+			'pinterest_auto_generate'      => 0,
+			'pinterest_pins_per_post'      => 3,
+			'pinterest_auto_render_images' => 1,
+			'pinterest_font_path'          => '',
+			'enabled_languages'            => 'en',
+			'auto_translate_on_publish'    => 0,
+			'humanize_strength'            => 'medium',
+			'humanize_tone'                => 'professional',
+			'humanize_personality'         => 'experienced_practitioner',
+			'humanize_readability'         => 'off',
 		);
 		$saved = get_option( 'rwai_settings', array() );
 		if ( ! is_array( $saved ) ) {

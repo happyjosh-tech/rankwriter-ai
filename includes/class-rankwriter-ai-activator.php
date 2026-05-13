@@ -27,8 +27,61 @@ class RankWriter_AI_Activator {
 
 		add_option( 'rwai_db_version', RWAI_VERSION );
 
+		// Create / upgrade the cluster engine tables.
+		if ( class_exists( 'RankWriter_AI_Clusters_DB' ) ) {
+			RankWriter_AI_Clusters_DB::install();
+		}
+
+		// Create / upgrade Programmatic SEO tables + seed starter templates.
+		if ( class_exists( 'RankWriter_AI_PSE_DB' ) ) {
+			RankWriter_AI_PSE_DB::install();
+			if ( class_exists( 'RankWriter_AI_PSE_Presets' ) ) {
+				RankWriter_AI_PSE_Presets::seed( false );
+			}
+		}
+
+		// Create / upgrade Pinterest tables + register recurring "due pins" cron.
+		if ( class_exists( 'RankWriter_AI_Pinterest_DB' ) ) {
+			RankWriter_AI_Pinterest_DB::install();
+		}
+		if ( class_exists( 'RankWriter_AI_Pinterest_Scheduler' ) ) {
+			( new RankWriter_AI_Pinterest_Scheduler() )->schedule_recurring();
+		}
+
 		if ( ! wp_next_scheduled( 'rwai_scheduled_blog_analysis' ) ) {
 			wp_schedule_event( time() + DAY_IN_SECONDS, 'weekly', 'rwai_scheduled_blog_analysis' );
+		}
+
+		// Schedule the Content Gap Detector's weekly audit so the dashboard
+		// has data even before the admin manually clicks "Run audit now".
+		if ( class_exists( 'RankWriter_AI_Gap_Detector' ) ) {
+			( new RankWriter_AI_Gap_Detector() )->schedule_recurring();
+		}
+
+		// Install the refresh-log table. The cron is NOT auto-scheduled
+		// here — the user must explicitly toggle "Enable auto-refresh"
+		// on the Auto Update page first, since the refresher consumes
+		// Claude API credits.
+		if ( class_exists( 'RankWriter_AI_Refresher_DB' ) ) {
+			RankWriter_AI_Refresher_DB::install();
+		}
+
+		// Schedule the seasonal engine's daily coverage refresh — cheap
+		// option-cache write, no API spend.
+		if ( class_exists( 'RankWriter_AI_Seasonal_Engine' ) ) {
+			( new RankWriter_AI_Seasonal_Engine() )->schedule_recurring();
+		}
+
+		// Install the syndication log table for Parasite SEO Mode.
+		if ( class_exists( 'RankWriter_AI_Syndication_DB' ) ) {
+			RankWriter_AI_Syndication_DB::install();
+		}
+
+		// Install the SEO Healer issues + repair-log tables. The cron is
+		// only scheduled if the user toggles the healer on later, since
+		// auto-fixes can hit the Claude API.
+		if ( class_exists( 'RankWriter_AI_SEO_Healer_DB' ) ) {
+			RankWriter_AI_SEO_Healer_DB::install();
 		}
 
 		// Seed the built-in category presets if none exist yet. Subsequent

@@ -55,6 +55,10 @@ class RankWriter_AI_Content_Generator {
 				'override_wp_category_id'    => 0,
 				'override_wp_category_new'   => '',
 				'max_tags'                   => 0, // 0 = no cap
+				'cluster_id'                 => 0,
+				'cluster_topic_id'           => 0,
+				'pse_context'                => '',
+				'language'                   => 'en',
 			)
 		);
 
@@ -94,9 +98,20 @@ class RankWriter_AI_Content_Generator {
 
 		$cat_term_id = $this->resolve_wp_category( $profile, $args );
 		$kw_tokens   = $this->topic_keywords( $topic, $research );
-		$link_pool   = $this->linker->get_candidates( $cat_term_id, $kw_tokens, 12 );
+		$this->linker->set_target_language( (string) $args['language'] );
+		$link_pool   = $this->linker->get_candidates( $cat_term_id, $kw_tokens, 12, (int) $args['cluster_id'] );
 
-		$system_prompt = $this->build_system_prompt( $profile_id, $word_count, $research, $link_pool );
+		$cluster_context = $this->cluster_prompt_context( (int) $args['cluster_id'] );
+
+		// Detect search intent on the topic. Heuristic-first; falls back to
+		// Claude for tiebreaking on ambiguous queries. Drives article shape,
+		// CTA placement, monetization emphasis, headline style, and schema.
+		$intent_detector = new RankWriter_AI_Intent_Detector();
+		$intent          = $intent_detector->detect_with_ai( $topic );
+		$intent_block    = RankWriter_AI_Intent_Detector::to_prompt_block( $intent );
+
+		$lang_block    = $this->language_prompt_block( (string) $args['language'] );
+		$system_prompt = $this->build_system_prompt( $profile_id, $word_count, $research, $link_pool, $cluster_context, $intent_block, (string) $args['pse_context'], $lang_block, (int) $cat_term_id );
 		$user_prompt   = $this->build_user_prompt( $profile, $topic, $word_count, $args['extra_context'], $research );
 
 		$text = $this->client->send(
@@ -117,9 +132,15 @@ class RankWriter_AI_Content_Generator {
 
 		// 1a) Humanize pass — opt-in via Settings. Second Claude call that
 		// rewrites the draft to scrub AI tells while preserving facts,
-		// numbers, HTML structure, and internal-link URLs.
-		if ( $this->should_humanize() ) {
-			$humanized = $this->humanize_content( $parsed['content'], $profile, $topic );
+		// numbers, HTML structure, and internal-link URLs. Delegates to
+		// the AI Humanization Engine (strength + tone + persona + readability).
+		if ( $this->should_humanize() && class_exists( 'RankWriter_AI_Humanizer' ) ) {
+			$humanizer = new RankWriter_AI_Humanizer();
+			$opts      = RankWriter_AI_Humanizer::default_options();
+			$opts['topic']        = $topic;
+			$opts['niche']        = isset( $profile['niche_description'] ) ? wp_trim_words( $profile['niche_description'], 25 ) : '';
+			$opts['banned_terms'] = isset( $profile['banned_terms'] ) ? (string) $profile['banned_terms'] : '';
+			$humanized = $humanizer->humanize( $parsed['content'], $opts );
 			if ( ! empty( $humanized ) ) {
 				$parsed['content'] = $humanized;
 			}
@@ -208,12 +229,65 @@ class RankWriter_AI_Content_Generator {
 		update_post_meta( $post_id, '_rwai_profile_id', $profile_id );
 		update_post_meta( $post_id, '_rwai_topic', $topic );
 		update_post_meta( $post_id, '_rwai_country', $country_code );
+		if ( class_exists( 'RankWriter_AI_Language' ) ) {
+			RankWriter_AI_Language::set_post_language( $post_id, $args['language'] );
+		}
+		if ( ! empty( $args['cluster_id'] ) ) {
+			update_post_meta( $post_id, '_rwai_cluster_id', (int) $args['cluster_id'] );
+		}
+		if ( ! empty( $args['cluster_topic_id'] ) ) {
+			update_post_meta( $post_id, RankWriter_AI_Cluster_Manager::META_TOPIC_ID, (int) $args['cluster_topic_id'] );
+		}
+		if ( ! empty( $intent['primary'] ) ) {
+			update_post_meta( $post_id, '_rwai_intent', $intent['primary'] );
+			update_post_meta( $post_id, '_rwai_intent_confidence', (int) $intent['confidence'] );
+		}
+
+		// Discover readiness snapshot — stored so the post compliance box
+		// can show the four dimensions without re-scoring on every load.
+		if ( class_exists( 'RankWriter_AI_Discover_Optimizer' ) ) {
+			$discover = ( new RankWriter_AI_Discover_Optimizer() )->score_post( $post_id );
+			update_post_meta( $post_id, '_rwai_discover_overall',  (int) $discover['overall'] );
+			update_post_meta( $post_id, '_rwai_discover_mobile',   (int) $discover['mobile_engagement']['score'] );
+			update_post_meta( $post_id, '_rwai_discover_fresh',    (int) $discover['freshness']['score'] );
+			update_post_meta( $post_id, '_rwai_discover_emotion',  (int) $discover['emotional_engagement']['score'] );
+			update_post_meta( $post_id, '_rwai_discover_image',    (int) $discover['image_readiness']['score'] );
+		}
+
+		// CPC opportunity score for the post — gives the editor a quick
+		// monetization snapshot in the compliance meta box.
+		if ( class_exists( 'RankWriter_AI_CPC_Scorer' ) ) {
+			$cpc_country = $country_code ?: 'US';
+			$hints       = array();
+			if ( ! empty( $intent['primary'] ) ) {
+				$hints['intent'] = $intent['primary'];
+			}
+			$cpc_row = ( new RankWriter_AI_CPC_Scorer() )->score( $topic, $cpc_country, $hints );
+			update_post_meta( $post_id, '_rwai_cpc_tier',           $cpc_row['tier'] );
+			update_post_meta( $post_id, '_rwai_cpc_estimated_usd',  $cpc_row['estimated_cpc_usd'] );
+			update_post_meta( $post_id, '_rwai_rpm_estimated_usd',  $cpc_row['rpm_prediction_usd'] );
+			update_post_meta( $post_id, '_rwai_monetization_score', $cpc_row['monetization_score'] );
+			update_post_meta( $post_id, '_rwai_cpc_niche',          $cpc_row['niche'] );
+			update_post_meta( $post_id, '_rwai_cpc_priority',       (int) $cpc_row['priority_niche'] );
+		}
 		update_post_meta( $post_id, '_rwai_research_snapshot', wp_json_encode( array(
 			'merged_seed_pool'  => isset( $research['merged_seed_pool'] ) ? array_slice( $research['merged_seed_pool'], 0, 15 ) : array(),
 			'trending_topics'   => isset( $research['trending_topics'] ) ? array_slice( $research['trending_topics'], 0, 10 ) : array(),
 			'competitor_titles' => isset( $research['competitor_titles'] ) ? array_slice( $research['competitor_titles'], 0, 10 ) : array(),
 			'fetched_at'        => isset( $research['fetched_at'] ) ? $research['fetched_at'] : '',
 		) ) );
+
+		// Heuristic fact-check on every freshly generated post. We skip the
+		// Claude validation pass to keep generation cheap — the user can
+		// run the deep review manually from the Fact Checker page.
+		if ( class_exists( 'RankWriter_AI_Fact_Checker' ) ) {
+			( new RankWriter_AI_Fact_Checker() )->check_post( (int) $post_id, false );
+		}
+
+		// Risk + AdSense compliance scan on every generated post.
+		if ( class_exists( 'RankWriter_AI_Risk_Detector' ) ) {
+			( new RankWriter_AI_Risk_Detector() )->scan_post( (int) $post_id );
+		}
 
 		return (int) $post_id;
 	}
@@ -248,11 +322,19 @@ class RankWriter_AI_Content_Generator {
 		return isset( $map[ $low ] ) ? $map[ $low ] : 'US';
 	}
 
-	private function build_system_prompt( $profile_id, $word_count, array $research, array $link_pool = array() ) {
+	private function build_system_prompt( $profile_id, $word_count, array $research, array $link_pool = array(), $cluster_context = '', $intent_block = '', $pse_context = '', $lang_block = '', $cat_term_id = 0 ) {
 		$style_block   = $this->style->to_prompt_context();
 		$profile_block = $this->profiles->to_prompt_context( $profile_id );
 		$fresh_block   = $this->fresh_signals_block( $research );
 		$linker_block  = $this->linker->to_prompt_context( $link_pool );
+
+		// Brand Voice memory — applies the calibrated tone + formatting
+		// fingerprint + category-specific overrides. Highest-priority block
+		// in the prompt so it overrides anything the Style Profile says.
+		$voice_block = '';
+		if ( class_exists( 'RankWriter_AI_Voice_Memory' ) ) {
+			$voice_block = ( new RankWriter_AI_Voice_Memory() )->to_prompt_context( (int) $cat_term_id );
+		}
 
 		$profile     = $this->profiles->get( $profile_id );
 		$niche_name  = ! empty( $profile['name'] ) ? $profile['name'] : 'this topic';
@@ -292,12 +374,104 @@ class RankWriter_AI_Content_Generator {
 			. "- Respect every banned term in the Category Profile.\n"
 			. "- Cite numerical claims with the source domain inline.\n";
 
+		$discover_block = class_exists( 'RankWriter_AI_Discover_Optimizer' )
+			? RankWriter_AI_Discover_Optimizer::generator_rules_block()
+			: '';
+
 		return $header
+			. ( $lang_block ? $lang_block . "\n\n" : '' )
+			. ( $voice_block ? $voice_block . "\n\n" : '' )
 			. ( $style_block ? $style_block . "\n\n" : '' )
 			. ( $profile_block ? $profile_block . "\n\n" : '' )
+			. ( $intent_block ? $intent_block . "\n\n" : '' )
+			. ( $discover_block ? $discover_block . "\n\n" : '' )
+			. ( $pse_context ? $pse_context . "\n\n" : '' )
+			. ( $cluster_context ? $cluster_context . "\n\n" : '' )
 			. ( $fresh_block ? $fresh_block . "\n\n" : '' )
 			. ( $linker_block ? $linker_block . "\n\n" : '' )
 			. $rules;
+	}
+
+	private function language_prompt_block( $lang ) {
+		$lang = strtolower( (string) $lang );
+		if ( '' === $lang || 'en' === $lang ) {
+			return '';
+		}
+		if ( ! class_exists( 'RankWriter_AI_Language' ) ) {
+			return '';
+		}
+		$cfg = RankWriter_AI_Language::language( $lang );
+		if ( ! $cfg ) {
+			return '';
+		}
+		$rtl = ! empty( $cfg['rtl'] ) ? " (right-to-left script)" : '';
+		return "## Output language\nWrite the ENTIRE article (title, all prose, headings, lists, FAQ questions and answers, meta_description, tags) in {$cfg['name']}{$rtl}. Write as a native {$cfg['name']} writer — natural idioms, local examples, currency / units adapted to {$cfg['default_country']}. Never mix English filler phrases into the prose. The focus_keyword and secondary_keywords must also be in {$cfg['name']}.";
+	}
+
+	/**
+	 * Compose the cluster-aware prompt block. Tells Claude this article is
+	 * part of a topical authority cluster, names the pillar, lists sibling
+	 * topics, and instructs the model to write the article as a supporting
+	 * piece that links back to the pillar.
+	 */
+	private function cluster_prompt_context( $cluster_id ) {
+		$cluster_id = (int) $cluster_id;
+		if ( ! $cluster_id || ! class_exists( 'RankWriter_AI_Cluster_Manager' ) ) {
+			return '';
+		}
+		$mgr     = new RankWriter_AI_Cluster_Manager();
+		$cluster = $mgr->get( $cluster_id, true );
+		if ( ! $cluster ) {
+			return '';
+		}
+
+		$lines   = array();
+		$lines[] = '## Topical authority cluster context';
+		$lines[] = 'This article is a SUPPORTING piece inside the "' . $cluster['name'] . '" cluster. It must link back to the pillar and connect laterally to sibling topics.';
+
+		if ( ! empty( $cluster['pillar_post_id'] ) ) {
+			$pillar = get_post( (int) $cluster['pillar_post_id'] );
+			if ( $pillar ) {
+				$lines[] = '';
+				$lines[] = '### Pillar article (link back to this once, with natural anchor text)';
+				$lines[] = '- Title: ' . $pillar->post_title;
+				$lines[] = '- URL:   ' . get_permalink( $pillar->ID );
+			}
+		} else {
+			$lines[] = '';
+			$lines[] = '(No pillar set yet — write this article as if a pillar titled "' . $cluster['name'] . '" exists, but do NOT invent a URL.)';
+		}
+
+		$sibling_lines = array();
+		foreach ( (array) $cluster['topics'] as $t ) {
+			if ( empty( $t['post_id'] ) ) {
+				continue;
+			}
+			$sib = get_post( (int) $t['post_id'] );
+			if ( $sib ) {
+				$sibling_lines[] = '- "' . $sib->post_title . '" — ' . get_permalink( $sib->ID );
+			}
+		}
+		if ( ! empty( $sibling_lines ) ) {
+			$lines[] = '';
+			$lines[] = '### Sibling articles in this cluster (link to 2-3 where contextually relevant)';
+			$lines = array_merge( $lines, array_slice( $sibling_lines, 0, 8 ) );
+		}
+
+		if ( ! empty( $cluster['semantic_keywords'] ) ) {
+			$lines[] = '';
+			$lines[] = '### Semantic keyword pool for this cluster (weave naturally; do not stuff)';
+			$lines[] = $cluster['semantic_keywords'];
+		}
+
+		$lines[] = '';
+		$lines[] = 'Cluster-rules:';
+		$lines[] = '- Include a 1-2 sentence reference to the pillar topic near the top of the article.';
+		$lines[] = '- Use <a href="..."> with the pillar URL above for the pillar link.';
+		$lines[] = '- Use natural anchor text for sibling links — never "click here" or "read more".';
+		$lines[] = '- Do NOT duplicate ground already covered by sibling articles listed above.';
+
+		return implode( "\n", $lines );
 	}
 
 	/**
@@ -579,75 +753,20 @@ RULES;
 	}
 
 	/**
-	 * Opt-in second pass: send the draft back to Claude and ask it to
-	 * rewrite every sentence so AI tells are scrubbed and the voice
-	 * tightens. Returns the rewritten HTML, or null on any failure
-	 * (so callers can fall back to the original draft).
-	 *
-	 * Doubles the API cost for a generation, but the user has explicitly
-	 * opted in via the "Polish for human voice" setting.
+	 * Legacy passthrough. Real humanization lives in
+	 * RankWriter_AI_Humanizer::humanize() — this stub just delegates so
+	 * any older code paths still work.
 	 */
 	private function humanize_content( $html, array $profile, $topic ) {
-		$html = (string) $html;
-		if ( strlen( $html ) < 200 ) {
-			return null; // not worth a round-trip
-		}
-
-		$niche       = ! empty( $profile['niche_description'] ) ? wp_trim_words( $profile['niche_description'], 30 ) : '';
-		$audience    = ! empty( $profile['target_audience'] ) ? wp_trim_words( $profile['target_audience'], 25 ) : '';
-		$banned      = ! empty( $profile['banned_terms'] ) ? trim( $profile['banned_terms'] ) : '';
-		$voice_block = $this->voice_rules_block();
-
-		$system = "You are a senior editor at a top publication. Your only job is to take an article draft and rewrite it so a critical reader on Twitter or Reddit could NOT tell it was AI-generated. You preserve every fact, every number, every HTML tag, every internal link — but you sharpen voice, cut filler, and remove AI fingerprints sentence by sentence.\n\n"
-			. "## What you are editing\n"
-			. "Topic: {$topic}\n"
-			. "Category: " . ( isset( $profile['name'] ) ? $profile['name'] : '' ) . "\n"
-			. ( $niche ? "Niche context: {$niche}\n" : '' )
-			. ( $audience ? "Audience: {$audience}\n" : '' )
-			. ( $banned ? "Banned phrases in this niche: {$banned}\n" : '' )
-			. "\n"
-			. $voice_block
-			. "\n\n## Rewrite job\n"
-			. "Read the draft. Identify every AI tell, every generic claim, every filler phrase, every parallel-structure tic. Rewrite sentence by sentence. Preserve:\n"
-			. "- All facts, numbers, names, dates, dollar amounts (do NOT invent new ones)\n"
-			. "- Every HTML tag and its attributes (<h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <a href=\"...\">, <table>, etc.)\n"
-			. "- Internal links — keep every <a href> URL exactly as it appears in the draft\n"
-			. "- Section ordering and headings (you may rewrite heading text for punch, but keep the same topics)\n"
-			. "- FAQ Q&A pairs if present (rewrite the prose, keep the structure)\n"
-			. "\nChange:\n"
-			. "- Open with a concrete situation, not stage-setting. If the draft starts generically, rewrite the first paragraph.\n"
-			. "- Replace every banned phrase from the voice rules.\n"
-			. "- Replace abstract claims with niche-specific detail.\n"
-			. "- Vary sentence rhythm aggressively. Mix fragments with longer sentences.\n"
-			. "- Close with a specific action, sharp opinion, or real question — not a recap.\n\n"
-			. "## Output\n"
-			. "Return ONLY the rewritten HTML body. No JSON wrapper. No preamble. No \"Here's the rewritten article:\" intro. No markdown code fences. Just the HTML.\n";
-
-		$user = "Rewrite this draft for human voice. Return only HTML.\n\n--- DRAFT ---\n\n" . $html;
-
-		$result = $this->client->send( $system, array(
-			array( 'role' => 'user', 'content' => $user ),
-		) );
-
-		if ( is_wp_error( $result ) || empty( $result ) ) {
+		if ( ! class_exists( 'RankWriter_AI_Humanizer' ) ) {
 			return null;
 		}
-
-		$result = trim( (string) $result );
-
-		// Strip any code fences Claude might add despite instructions.
-		if ( 0 === strpos( $result, '```' ) ) {
-			$result = preg_replace( '/^```(?:html)?\s*/i', '', $result );
-			$result = preg_replace( '/\s*```$/', '', $result );
-			$result = trim( $result );
-		}
-
-		// Sanity: make sure we got HTML back, not refusal text.
-		if ( false === strpos( $result, '<' ) || strlen( $result ) < ( strlen( $html ) * 0.4 ) ) {
-			return null;
-		}
-
-		return wp_kses_post( $this->normalize_content_html( $result ) );
+		$humanizer = new RankWriter_AI_Humanizer();
+		$opts      = RankWriter_AI_Humanizer::default_options();
+		$opts['topic']        = $topic;
+		$opts['niche']        = isset( $profile['niche_description'] ) ? wp_trim_words( $profile['niche_description'], 25 ) : '';
+		$opts['banned_terms'] = isset( $profile['banned_terms'] ) ? (string) $profile['banned_terms'] : '';
+		return $humanizer->humanize( $html, $opts );
 	}
 
 	/**

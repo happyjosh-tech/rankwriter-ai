@@ -45,11 +45,96 @@ $pool     = (array) $data['pool'];
 			</h2>
 
 			<h3><?php esc_html_e( 'Ranked keyword pool (used by the generator)', 'rankwriter-ai' ); ?></h3>
-			<p class="rwai-tagcloud">
-				<?php foreach ( array_slice( $result['merged_seed_pool'], 0, 30 ) as $kw ) : ?>
-					<span class="rwai-tag rwai-tag-strong"><?php echo esc_html( $kw['keyword'] ); ?> <em>(<?php echo esc_html( $kw['score'] ); ?>)</em></span>
+
+			<?php if ( ! empty( $result['intent_counts'] ) ) : ?>
+				<p class="rwai-muted" style="margin-bottom:8px;">
+					<strong><?php esc_html_e( 'Intent mix:', 'rankwriter-ai' ); ?></strong>
+					<?php
+					$intent_labels = array(
+						'informational' => __( 'Informational', 'rankwriter-ai' ),
+						'commercial'    => __( 'Commercial', 'rankwriter-ai' ),
+						'transactional' => __( 'Transactional', 'rankwriter-ai' ),
+						'navigational'  => __( 'Navigational', 'rankwriter-ai' ),
+					);
+					$intent_pieces = array();
+					foreach ( $result['intent_counts'] as $intent_key => $count ) {
+						if ( $count <= 0 ) { continue; }
+						$label = isset( $intent_labels[ $intent_key ] ) ? $intent_labels[ $intent_key ] : $intent_key;
+						$intent_pieces[] = '<span class="rwai-intent-badge rwai-intent-' . esc_attr( $intent_key ) . '">' . esc_html( $label ) . ' ' . (int) $count . '</span>';
+					}
+					echo wp_kses_post( implode( ' ', $intent_pieces ) );
+					?>
+				</p>
+			<?php endif; ?>
+
+			<?php $cpc_sum = isset( $result['cpc_summary'] ) ? $result['cpc_summary'] : array(); ?>
+			<?php if ( ! empty( $cpc_sum['count'] ) ) : ?>
+				<div class="rwai-cpc-summary-row">
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Avg estimated CPC', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_sum['avg_cpc'], 2 ) ); ?></div>
+					</div>
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Top CPC in pool', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_sum['max_cpc'], 2 ) ); ?></div>
+					</div>
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Predicted RPM', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_sum['avg_rpm'], 0 ) ); ?></div>
+					</div>
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Monetization score', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value"><?php echo esc_html( (int) $cpc_sum['avg_score'] ); ?>/100</div>
+					</div>
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Dominant tier', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value">
+							<span class="rwai-cpc-badge rwai-cpc-<?php echo esc_attr( $cpc_sum['dominant_tier'] ); ?>"><?php echo esc_html( RankWriter_AI_CPC_Scorer::tier_label( $cpc_sum['dominant_tier'] ) ); ?></span>
+						</div>
+					</div>
+				</div>
+			<?php endif; ?>
+
+			<table class="widefat striped">
+				<thead>
+					<tr>
+						<th style="width:36%;"><?php esc_html_e( 'Keyword', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'Intent', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'CPC tier', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'Est. CPC', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'RPM', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'Mon. score', 'rankwriter-ai' ); ?></th>
+						<th><?php esc_html_e( 'Competition', 'rankwriter-ai' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+				<?php foreach ( array_slice( $result['merged_seed_pool'], 0, 30 ) as $kw ) :
+					$intent       = isset( $kw['intent'] ) ? $kw['intent'] : 'informational';
+					$intent_label = isset( $kw['intent_label'] ) ? $kw['intent_label'] : ucfirst( $intent );
+					$cpc          = isset( $kw['cpc'] ) ? (float) $kw['cpc'] : 0;
+					$tier         = isset( $kw['cpc_tier'] ) ? $kw['cpc_tier'] : 'low';
+					$tier_label   = isset( $kw['cpc_tier_label'] ) ? $kw['cpc_tier_label'] : 'Low CPC';
+					$rpm          = isset( $kw['rpm'] ) ? (float) $kw['rpm'] : 0;
+					$mscore       = isset( $kw['monetization_score'] ) ? (int) $kw['monetization_score'] : 0;
+					$comp         = isset( $kw['competition'] ) ? $kw['competition'] : 'medium';
+					$priority     = ! empty( $kw['priority_niche'] );
+					?>
+					<tr>
+						<td>
+							<strong><?php echo esc_html( $kw['keyword'] ); ?></strong>
+							<?php if ( $priority ) : ?> <span class="rwai-priority-star" title="<?php esc_attr_e( 'Priority high-value niche', 'rankwriter-ai' ); ?>">★</span><?php endif; ?>
+							<?php if ( ! empty( $kw['used_real_cpc'] ) ) : ?> <small class="rwai-muted"><?php esc_html_e( '(real data)', 'rankwriter-ai' ); ?></small><?php endif; ?>
+						</td>
+						<td><span class="rwai-intent-badge rwai-intent-<?php echo esc_attr( $intent ); ?>"><?php echo esc_html( $intent_label ); ?></span></td>
+						<td><span class="rwai-cpc-badge rwai-cpc-<?php echo esc_attr( $tier ); ?>"><?php echo esc_html( $tier_label ); ?></span></td>
+						<td>$<?php echo esc_html( number_format( $cpc, 2 ) ); ?></td>
+						<td>$<?php echo esc_html( number_format( $rpm, 0 ) ); ?></td>
+						<td><?php echo esc_html( $mscore ); ?></td>
+						<td><span class="rwai-pill rwai-comp-<?php echo esc_attr( $comp ); ?>"><?php echo esc_html( ucfirst( $comp ) ); ?></span></td>
+					</tr>
 				<?php endforeach; ?>
-			</p>
+				</tbody>
+			</table>
 
 			<div class="rwai-grid rwai-grid-2">
 				<div>

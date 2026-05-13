@@ -76,7 +76,8 @@ $default_words    = ! empty( $style['average_word_count'] ) ? (int) $style['aver
 						<br><button type="button" class="button button-small rwai-ai-fill" data-rwai-ai-field="topic" data-rwai-ai-needs="profile_id"><?php esc_html_e( '✨ AI fill', 'rankwriter-ai' ); ?></button>
 					</th>
 					<td>
-						<input type="text" class="regular-text" id="rwai_topic" name="topic" required placeholder="<?php esc_attr_e( 'e.g. Agriculture grants for first-time farmers in the US', 'rankwriter-ai' ); ?>" data-rwai-ai-target="topic" />
+						<?php $rwai_prefill = isset( $_GET['prefill_topic'] ) ? sanitize_text_field( wp_unslash( $_GET['prefill_topic'] ) ) : ''; ?>
+						<input type="text" class="regular-text" id="rwai_topic" name="topic" required placeholder="<?php esc_attr_e( 'e.g. Agriculture grants for first-time farmers in the US', 'rankwriter-ai' ); ?>" data-rwai-ai-target="topic" value="<?php echo esc_attr( $rwai_prefill ); ?>" />
 					</td>
 				</tr>
 				<tr>

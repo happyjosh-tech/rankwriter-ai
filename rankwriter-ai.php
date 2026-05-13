@@ -3,7 +3,7 @@
  * Plugin Name:       RankWriter AI
  * Plugin URI:        https://github.com/happyjosh-tech/rankwriter-ai
  * Description:       AI-powered content generator that learns from your existing blog and supports unlimited custom category profiles. Built on Anthropic's Claude API.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            RankWriter AI
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RWAI_VERSION', '1.0.0' );
+define( 'RWAI_VERSION', '1.1.0' );
 define( 'RWAI_PLUGIN_FILE', __FILE__ );
 define( 'RWAI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RWAI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -48,11 +48,43 @@ require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-seo-integration.php
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-keyword-research.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-internal-linker.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-compliance.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-risk-detector.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-seo-healer-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-seo-healer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-schema-engine.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-schema-injector.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-image-sourcer.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-ai-suggester.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-intent-detector.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-cpc-scorer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-title-intelligence.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-discover-optimizer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pse-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pse-manager.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pse-engine.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pse-queue.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pse-presets.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pinterest-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pinterest-engine.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pinterest-image.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-pinterest-scheduler.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-language.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-translator.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-humanizer.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-voice-memory.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-syndication-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-parasite-engine.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-gap-detector.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-seasonal-engine.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-clusters-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-cluster-manager.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-cluster-suggester.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-cluster-analyzer.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-content-generator.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-autopilot.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-fact-checker.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-refresher-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-content-refresher.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-legal-pages.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-github-updater.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai.php';

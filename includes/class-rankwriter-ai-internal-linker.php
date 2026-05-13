@@ -14,14 +14,34 @@ class RankWriter_AI_Internal_Linker {
 
 	/**
 	 * Build a candidate list of existing posts the generator should link from.
-	 * Combines (in priority order): top-performing posts → posts in matching
-	 * category → recent posts → posts whose title contains a topic keyword.
+	 *
+	 * Priority order:
+	 *   0) Same-cluster siblings (pillar + already-published cluster topics)
+	 *      — this is what makes topical authority wiring work.
+	 *   1) Top-performing posts.
+	 *   2) Posts in matching category.
+	 *   3) Posts whose title contains a topic keyword.
+	 *   4) Recent posts as fallback.
 	 *
 	 * @return array of { id, title, url, excerpt }
 	 */
-	public function get_candidates( $category_term_id, array $topic_keywords, $limit = 12 ) {
+	public function get_candidates( $category_term_id, array $topic_keywords, $limit = 12, $cluster_id = 0 ) {
 		$candidates = array();
 		$seen       = array();
+
+		// 0) Same-cluster siblings — strongest authority signal.
+		if ( $cluster_id && class_exists( 'RankWriter_AI_Cluster_Manager' ) ) {
+			$mgr = new RankWriter_AI_Cluster_Manager();
+			foreach ( $mgr->get_cluster_post_ids( (int) $cluster_id ) as $sib_id ) {
+				if ( isset( $seen[ $sib_id ] ) ) {
+					continue;
+				}
+				$this->push_candidate( $candidates, $seen, (int) $sib_id, 'same-cluster' );
+				if ( count( $candidates ) >= $limit ) {
+					return $candidates;
+				}
+			}
+		}
 
 		// 1) Top-performing posts from the persisted style profile.
 		$style   = new RankWriter_AI_Style_Profile();
@@ -116,6 +136,15 @@ class RankWriter_AI_Internal_Linker {
 		if ( ! $post || 'publish' !== $post->post_status ) {
 			return;
 		}
+		// Language-aware filtering: only link to posts in the same language
+		// as the one being generated. The Content Generator sets the target
+		// language via $this->target_language() before calling get_candidates.
+		if ( '' !== $this->target_lang && class_exists( 'RankWriter_AI_Language' ) ) {
+			$post_lang = RankWriter_AI_Language::get_post_language( $post->ID );
+			if ( $post_lang !== $this->target_lang ) {
+				return;
+			}
+		}
 		$candidates[] = array(
 			'id'      => (int) $post->ID,
 			'title'   => $post->post_title,
@@ -124,6 +153,12 @@ class RankWriter_AI_Internal_Linker {
 			'reason'  => $reason,
 		);
 		$seen[ $post->ID ] = true;
+	}
+
+	/** Language-scoped candidate filtering (set by Content Generator). */
+	private $target_lang = '';
+	public function set_target_language( $lang ) {
+		$this->target_lang = strtolower( (string) $lang );
 	}
 
 	/**

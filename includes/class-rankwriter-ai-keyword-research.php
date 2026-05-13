@@ -59,6 +59,76 @@ class RankWriter_AI_Keyword_Research {
 
 		$pool = $this->merge_and_rank( $seed, $suggest, $trending, $comp_titles, $serpapi );
 
+		// Tag every pool entry with its detected search intent (heuristic,
+		// transient-cached, microseconds per keyword).
+		if ( class_exists( 'RankWriter_AI_Intent_Detector' ) ) {
+			$intent_detector = new RankWriter_AI_Intent_Detector();
+			foreach ( $pool as $i => $row ) {
+				$intent       = $intent_detector->detect( $row['keyword'] );
+				$pool[ $i ]['intent']            = $intent['primary'];
+				$pool[ $i ]['intent_label']      = $intent['label'];
+				$pool[ $i ]['intent_confidence'] = $intent['confidence'];
+			}
+		}
+
+		// CPC Opportunity Score per keyword. If DataForSEO returned real
+		// volume/CPC/competition, we blend it in via hints; otherwise the
+		// scorer uses its heuristic niche + country + pattern model.
+		if ( class_exists( 'RankWriter_AI_CPC_Scorer' ) ) {
+			$dfs_map = array();
+			if ( ! empty( $dataforseo ) ) {
+				foreach ( $dataforseo as $dr ) {
+					$dfs_map[ strtolower( $dr['keyword'] ) ] = $dr;
+				}
+			}
+			$cpc_scorer = new RankWriter_AI_CPC_Scorer();
+			foreach ( $pool as $i => $row ) {
+				$hints = array();
+				if ( isset( $pool[ $i ]['intent'] ) ) {
+					$hints['intent'] = $pool[ $i ]['intent'];
+				}
+				$lk = strtolower( $row['keyword'] );
+				if ( isset( $dfs_map[ $lk ] ) ) {
+					if ( isset( $dfs_map[ $lk ]['cpc'] ) ) {
+						$hints['real_cpc'] = (float) $dfs_map[ $lk ]['cpc'];
+					}
+					if ( isset( $dfs_map[ $lk ]['search_volume'] ) ) {
+						$hints['search_volume'] = (int) $dfs_map[ $lk ]['search_volume'];
+					}
+					if ( isset( $dfs_map[ $lk ]['competition'] ) ) {
+						$hints['competition'] = (string) $dfs_map[ $lk ]['competition'];
+					}
+				}
+				$cpc_row = $cpc_scorer->score( $row['keyword'], $country, $hints );
+				$pool[ $i ]['cpc']                 = $cpc_row['estimated_cpc_usd'];
+				$pool[ $i ]['cpc_tier']            = $cpc_row['tier'];
+				$pool[ $i ]['cpc_tier_label']      = RankWriter_AI_CPC_Scorer::tier_label( $cpc_row['tier'] );
+				$pool[ $i ]['rpm']                 = $cpc_row['rpm_prediction_usd'];
+				$pool[ $i ]['monetization_score']  = $cpc_row['monetization_score'];
+				$pool[ $i ]['competition']         = $cpc_row['competition_level'];
+				$pool[ $i ]['niche']               = $cpc_row['niche'];
+				$pool[ $i ]['priority_niche']      = $cpc_row['priority_niche'];
+				$pool[ $i ]['used_real_cpc']       = $cpc_row['used_real_data'];
+			}
+		}
+
+		// Also group by intent so the UI / generator can serve same-intent
+		// keyword pools (avoids mixed-intent articles).
+		$intent_groups = array();
+		if ( class_exists( 'RankWriter_AI_Intent_Detector' ) ) {
+			$keywords_only = array_map( function ( $r ) { return $r['keyword']; }, $pool );
+			$groups        = ( new RankWriter_AI_Intent_Detector() )->group_by_intent( $keywords_only );
+			foreach ( $groups as $intent_key => $rows ) {
+				$intent_groups[ $intent_key ] = count( $rows );
+			}
+		}
+
+		$cpc_summary = array();
+		if ( class_exists( 'RankWriter_AI_CPC_Scorer' ) ) {
+			$scorer      = new RankWriter_AI_CPC_Scorer();
+			$cpc_summary = $scorer->summarize( $scorer->score_bulk( $pool, $country ) );
+		}
+
 		$result = array(
 			'seed'              => $seed,
 			'country'           => $country,
@@ -69,6 +139,8 @@ class RankWriter_AI_Keyword_Research {
 			'serpapi_related'   => $serpapi,
 			'dataforseo_volume' => $dataforseo,
 			'merged_seed_pool'  => $pool,
+			'intent_counts'     => $intent_groups,
+			'cpc_summary'       => $cpc_summary,
 		);
 
 		set_transient( $cache_key, $result, self::CACHE_TTL );

@@ -30,6 +30,55 @@ $api_ready     = (bool) $data['api_ready'];
 		</div>
 	</div>
 
+	<?php
+	$cpc_d = isset( $data['cpc_dashboard'] ) ? (array) $data['cpc_dashboard'] : array();
+	if ( ! empty( $cpc_d['count'] ) ) :
+	?>
+		<div class="rwai-card rwai-card-wide">
+			<h2><?php esc_html_e( 'Blog monetization snapshot', 'rankwriter-ai' ); ?>
+				<small class="rwai-muted" style="font-weight:normal;text-transform:none;letter-spacing:normal;">
+					<?php
+					/* translators: 1: country code, 2: number of posts scored */
+					printf( esc_html__( 'Based on your most recent %2$d posts scored for %1$s.', 'rankwriter-ai' ), esc_html( isset( $cpc_d['country'] ) ? $cpc_d['country'] : 'US' ), (int) $cpc_d['count'] );
+					?>
+				</small>
+			</h2>
+			<div class="rwai-cpc-summary-row">
+				<div class="rwai-cpc-summary-card">
+					<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Avg estimated CPC', 'rankwriter-ai' ); ?></div>
+					<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_d['avg_cpc'], 2 ) ); ?></div>
+				</div>
+				<div class="rwai-cpc-summary-card">
+					<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Top recent CPC', 'rankwriter-ai' ); ?></div>
+					<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_d['max_cpc'], 2 ) ); ?></div>
+				</div>
+				<div class="rwai-cpc-summary-card">
+					<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Predicted RPM', 'rankwriter-ai' ); ?></div>
+					<div class="rwai-cpc-summary-value">$<?php echo esc_html( number_format( (float) $cpc_d['avg_rpm'], 0 ) ); ?></div>
+				</div>
+				<div class="rwai-cpc-summary-card">
+					<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Monetization score', 'rankwriter-ai' ); ?></div>
+					<div class="rwai-cpc-summary-value"><?php echo esc_html( (int) $cpc_d['avg_score'] ); ?>/100</div>
+				</div>
+				<div class="rwai-cpc-summary-card">
+					<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Dominant tier', 'rankwriter-ai' ); ?></div>
+					<div class="rwai-cpc-summary-value">
+						<span class="rwai-cpc-badge rwai-cpc-<?php echo esc_attr( $cpc_d['dominant_tier'] ); ?>"><?php echo esc_html( RankWriter_AI_CPC_Scorer::tier_label( $cpc_d['dominant_tier'] ) ); ?></span>
+					</div>
+				</div>
+				<?php if ( ! empty( $cpc_d['priority_count'] ) ) : ?>
+					<div class="rwai-cpc-summary-card">
+						<div class="rwai-cpc-summary-label"><?php esc_html_e( 'Priority-niche posts', 'rankwriter-ai' ); ?></div>
+						<div class="rwai-cpc-summary-value"><?php echo esc_html( (int) $cpc_d['priority_count'] . ' / ' . (int) $cpc_d['count'] ); ?> ★</div>
+					</div>
+				<?php endif; ?>
+			</div>
+			<p class="rwai-muted" style="margin-top:10px;font-size:12px;">
+				<?php esc_html_e( 'Estimates are based on heuristic niche + country + intent modeling. With a DataForSEO key configured in Settings, real Google Ads data blends in for accuracy.', 'rankwriter-ai' ); ?>
+			</p>
+		</div>
+	<?php endif; ?>
+
 	<?php if ( ! empty( $style['summary'] ) ) : ?>
 		<div class="rwai-card rwai-card-wide">
 			<h2><?php esc_html_e( 'Current Blog Style Profile', 'rankwriter-ai' ); ?></h2>
@@ -61,6 +110,68 @@ $api_ready     = (bool) $data['api_ready'];
 		</div>
 	<?php endif; ?>
 
+	<?php
+	// Content Gap Detector — surface the top 3 opportunities right on the
+	// dashboard so users see actionable next-topic suggestions without
+	// drilling into the Gap Detector page.
+	if ( class_exists( 'RankWriter_AI_Gap_Detector' ) ) :
+		$gap_audit = ( new RankWriter_AI_Gap_Detector() )->get_last_audit();
+		$gap_top   = isset( $gap_audit['top_opportunities'] ) ? array_slice( (array) $gap_audit['top_opportunities'], 0, 3 ) : array();
+		$gap_url   = RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::GAP_SLUG );
+	?>
+	<div class="rwai-card rwai-card-wide">
+		<h2><?php esc_html_e( 'Top content gaps', 'rankwriter-ai' ); ?>
+			<a href="<?php echo esc_url( $gap_url ); ?>" class="page-title-action" style="float:right;"><?php esc_html_e( 'Open Gap Detector', 'rankwriter-ai' ); ?></a>
+		</h2>
+		<?php if ( empty( $gap_top ) ) : ?>
+			<p class="rwai-muted"><?php esc_html_e( 'Run an audit on the Gap Detector page to surface ranked content opportunities.', 'rankwriter-ai' ); ?></p>
+		<?php else : ?>
+			<ul class="rwai-gap-mini-list">
+				<?php foreach ( $gap_top as $g ) : ?>
+					<li>
+						<span class="rwai-pill rwai-pill-ok"><?php echo esc_html( (int) $g['opportunity_score'] ); ?></span>
+						<strong><?php echo esc_html( $g['keyword'] ); ?></strong>
+						<span class="rwai-muted"><?php echo esc_html( ucfirst( (string) $g['intent'] ) ); ?> · <?php echo esc_html( strtoupper( (string) $g['cpc_tier'] ) ); ?></span>
+						<a class="button button-small" href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::GENERATE_SLUG, array( 'prefill_topic' => rawurlencode( $g['keyword'] ) ) ) ); ?>"><?php esc_html_e( 'Generate', 'rankwriter-ai' ); ?></a>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		<?php endif; ?>
+	</div>
+	<?php endif; ?>
+
+	<?php
+	if ( class_exists( 'RankWriter_AI_Seasonal_Engine' ) ) :
+		$se      = new RankWriter_AI_Seasonal_Engine();
+		$niches  = $se->detect_niches();
+		$top_evs = array_slice( $se->upcoming( 90, $niches, true ), 0, 3 );
+		$cal_url = RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::SEASONAL_SLUG );
+	?>
+	<div class="rwai-card rwai-card-wide">
+		<h2><?php esc_html_e( 'Upcoming seasonal opportunities', 'rankwriter-ai' ); ?>
+			<a href="<?php echo esc_url( $cal_url ); ?>" class="page-title-action" style="float:right;"><?php esc_html_e( 'Open calendar', 'rankwriter-ai' ); ?></a>
+		</h2>
+		<?php if ( empty( $top_evs ) ) : ?>
+			<p class="rwai-muted"><?php esc_html_e( 'No upcoming hot events in the next 90 days for your detected niches.', 'rankwriter-ai' ); ?></p>
+		<?php else : ?>
+			<ul class="rwai-gap-mini-list">
+				<?php foreach ( $top_evs as $row ) :
+					$heat = (int) $row['heat'];
+					$pill = $heat >= 70 ? 'rwai-pill-bad' : ( $heat >= 40 ? 'rwai-pill-warn' : 'rwai-pill-ok' );
+					$seed = $row['topic_suggestions'][0] ?? $row['event']['name'];
+				?>
+					<li>
+						<span class="rwai-pill <?php echo esc_attr( $pill ); ?>"><?php echo esc_html( $heat ); ?></span>
+						<strong><?php echo esc_html( $row['event']['name'] ); ?></strong>
+						<span class="rwai-muted"><?php echo esc_html( sprintf( __( 'in %1$d days · publish by %2$s · %3$s coverage', 'rankwriter-ai' ), $row['days_until_event'], $row['window']['ideal_publish'], (int) ( $row['coverage']['count'] ?? 0 ) === 0 ? __( 'no', 'rankwriter-ai' ) : (int) $row['coverage']['count'] ) ); ?></span>
+						<a class="button button-small" href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::GENERATE_SLUG, array( 'prefill_topic' => rawurlencode( $seed ) ) ) ); ?>"><?php esc_html_e( 'Generate', 'rankwriter-ai' ); ?></a>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		<?php endif; ?>
+	</div>
+	<?php endif; ?>
+
 	<div class="rwai-card rwai-card-wide">
 		<h2><?php esc_html_e( 'Quick start', 'rankwriter-ai' ); ?></h2>
 		<ol>
@@ -69,6 +180,20 @@ $api_ready     = (bool) $data['api_ready'];
 			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::PROFILES_SLUG, array( 'new' => 1 ) ) ); ?>"><?php esc_html_e( 'Create a Category Profile for your niche', 'rankwriter-ai' ); ?></a></li>
 			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::RESEARCH_SLUG ) ); ?>"><?php esc_html_e( 'Run Keyword Research on a seed topic to pull fresh, live keywords', 'rankwriter-ai' ); ?></a></li>
 			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::GENERATE_SLUG ) ); ?>"><?php esc_html_e( 'Generate your first AI article (SEO meta written automatically)', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::CLUSTERS_SLUG ) ); ?>"><?php esc_html_e( 'Build topical authority clusters (pillar + supporting articles for topic silos)', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::PSE_SLUG ) ); ?>"><?php esc_html_e( 'Scale with Programmatic SEO — one template + a CSV of entities = hundreds of unique pages', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::PINTEREST_SLUG ) ); ?>"><?php esc_html_e( 'Spin Pinterest pins from every article (title + description + hashtags + 1000×1500 image)', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::TRANSLATIONS_SLUG ) ); ?>"><?php esc_html_e( 'Multi-language: translate posts (English / French / Spanish / German / Portuguese / Arabic)', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::HUMANIZER_SLUG ) ); ?>"><?php esc_html_e( 'Humanization Lab: score any content for AI tells and rewrite it with a chosen tone + persona', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::VOICE_SLUG ) ); ?>"><?php esc_html_e( 'Brand Voice: calibrate tone + formatting memory so every new article matches your blog identity', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::PARASITE_SLUG ) ); ?>"><?php esc_html_e( 'Parasite SEO: repurpose posts for Medium / LinkedIn / Quora / Reddit with platform-specific rewrites', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::GAP_SLUG ) ); ?>"><?php esc_html_e( 'Gap Detector: audit competitor RSS + clusters + linking to surface ranked content opportunities', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::FACT_SLUG ) ); ?>"><?php esc_html_e( 'Fact Checker: validate dates, deadlines, visa info, stats, salary figures + official sources', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::RISK_SLUG ) ); ?>"><?php esc_html_e( 'Risk Detector: scan posts for medical / financial / immigration overclaims + AdSense compliance', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::HEALER_SLUG ) ); ?>"><?php esc_html_e( 'SEO Healer: background scanner finds + auto-repairs broken links, missing alts, missing meta, missing schema', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::REFRESH_SLUG ) ); ?>"><?php esc_html_e( 'Auto Update: refresh stale posts in the background — preserves URLs and rankings', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::SCHEMA_SLUG ) ); ?>"><?php esc_html_e( 'Schema: auto-build JSON-LD @graph (Article + Breadcrumb + FAQ + Recipe + Job + Event + Review)', 'rankwriter-ai' ); ?></a></li>
+			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::SEASONAL_SLUG ) ); ?>"><?php esc_html_e( 'Seasonal Trends: ride annual traffic spikes (Black Friday, tax season, back-to-school)', 'rankwriter-ai' ); ?></a></li>
 			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::AUTOPILOT_SLUG ) ); ?>"><?php esc_html_e( 'Enable Autopilot to run continuously on a schedule', 'rankwriter-ai' ); ?></a></li>
 			<li><a href="<?php echo esc_url( RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::LEGAL_SLUG ) ); ?>"><?php esc_html_e( 'Generate your AdSense-required legal pages (About / Contact / Privacy Policy)', 'rankwriter-ai' ); ?></a></li>
 		</ol>

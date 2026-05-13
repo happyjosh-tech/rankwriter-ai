@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-13
+
+### Added
+
+- **Topic Clusters** — manager, suggester, analyzer, dedicated clusters DB, admin partials for cluster list / edit. Plan pillar + supporting articles and let the generator know which cluster a piece belongs to.
+- **Programmatic SEO (PSE)** — template engine, manager, queue, presets, dedicated DB. Generate hundreds of templated landing pages from a CSV-style data source.
+- **Pinterest Engine** — DB, scheduler, image generator, pin partials. Auto-create and schedule pins from new posts.
+- **Content Refresher** — DB + engine that re-audits older posts and rewrites stale sections via Claude.
+- **Fact Checker** — verifies factual claims in generated drafts before publish.
+- **SEO Healer** — scans existing posts for SEO issues (thin content, missing schema, broken links, etc.) and patches them.
+- **Schema Engine** — expanded JSON-LD support beyond the original injector, with a dedicated schema dashboard.
+- **Discover Optimizer** — title / image / opening hook tuning for Google Discover surface placement.
+- **Title Intelligence Lab** — A/B title generator with CTR-prediction scoring.
+- **Gap Detector** — finds topical gaps versus competitor sites and queues fill-in articles.
+- **Seasonal Engine** — seasonal calendar that surfaces upcoming events (holidays, sports, product launches) for timely content.
+- **Parasite SEO Engine** — distribute syndicated articles across third-party platforms.
+- **Risk Detector + Dashboard** — surfaces compliance / policy / AdSense risk per post.
+- **Humanization Lab** — UI on top of the second-pass humanizer for batch rewriting.
+- **Translator** — multi-language article translation pipeline with language detection.
+- **Voice Memory** — saves the blog's distilled voice across runs so the generator stays consistent.
+- **CPC Scorer** — flags low-monetization keywords before generation.
+- **Intent Detector** — classifies queries as informational / transactional / navigational and adapts the prompt.
+
+### Changed
+
+- `class-rankwriter-ai-admin.php` grew substantially to host the new admin screens, AJAX handlers, and menu entries for every feature above.
+- Content generator now consults the cluster + intent + CPC subsystems when building its prompt context.
+- Internal linker now scores candidates against cluster relationships in addition to keyword matches.
+- Schema injector hands off complex schema types to the new Schema Engine.
+- Keyword research module reuses the intent detector for downstream filtering.
+
+[Unreleased]: https://github.com/happyjosh-tech/rankwriter-ai/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.1.0
+
 ## [1.0.0] - 2026-05-12
 
 ### Added
@@ -36,5 +70,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default Claude model: `claude-opus-4-7`.
 - All API keys (Claude, SerpAPI, DataForSEO, Pexels, Unsplash) are optional except Claude.
 
-[Unreleased]: https://github.com/happyjosh-tech/rankwriter-ai/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.0.0
