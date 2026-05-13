@@ -535,6 +535,9 @@ class RankWriter_AI_Admin {
 			case 'healer_delete_broken_link':
 				$this->handle_healer_delete_broken_link();
 				break;
+			case 'healer_dismiss_issue':
+				$this->handle_healer_dismiss_issue();
+				break;
 		}
 	}
 
@@ -3110,10 +3113,33 @@ class RankWriter_AI_Admin {
 		}
 		$result = ( new RankWriter_AI_SEO_Healer() )->delete_link_in_post( $post_id, $old_url );
 		if ( is_wp_error( $result ) ) {
+			// "rwai_already_clean" means the link was already gone and the
+			// stale issue has been cleared for us — treat it as a success
+			// from the user's perspective so the notification disappears.
+			if ( 'rwai_already_clean' === $result->get_error_code() ) {
+				wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-dismissed' ) ) );
+				exit;
+			}
 			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( $result->get_error_message() ) ) ) );
 			exit;
 		}
 		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-fixed' ) ) );
+		exit;
+	}
+
+	private function handle_healer_dismiss_issue() {
+		check_admin_referer( self::HEALER_NONCE );
+		$issue_id = isset( $_POST['issue_id'] ) ? absint( $_POST['issue_id'] ) : 0;
+		if ( ! $issue_id || ! class_exists( 'RankWriter_AI_SEO_Healer' ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( __( 'Issue not specified.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		$result = ( new RankWriter_AI_SEO_Healer() )->dismiss_issue( $issue_id );
+		if ( is_wp_error( $result ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-error', 'rwai_err' => rawurlencode( $result->get_error_message() ) ) ) );
+			exit;
+		}
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::HEALER_SLUG, array( 'rwai_msg' => 'healer-dismissed' ) ) );
 		exit;
 	}
 

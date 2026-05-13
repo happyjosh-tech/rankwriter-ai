@@ -51,6 +51,40 @@ class RankWriter_AI_SEO_Healer {
 	public function register_hooks() {
 		add_action( self::CRON_HOOK_SCAN, array( $this, 'scan_tick' ) );
 		add_action( self::CRON_HOOK_FIX,  array( $this, 'fix_tick' ) );
+		// Re-scan a post whenever it's updated so any issue the user just
+		// fixed (manually in the editor OR via our Replace/Delete buttons)
+		// clears immediately, instead of waiting for the next cron tick.
+		add_action( 'save_post', array( $this, 'on_save_post' ), 20, 3 );
+		// Trashing / deleting a post should wipe its issues so we don't
+		// keep flagging URLs against a post that no longer exists.
+		add_action( 'wp_trash_post',  array( $this, 'on_remove_post' ) );
+		add_action( 'before_delete_post', array( $this, 'on_remove_post' ) );
+	}
+
+	/**
+	 * `save_post` callback. Skips autosaves, revisions, and bulk-edit noise.
+	 */
+	public function on_save_post( $post_id, $post = null, $update = null ) {
+		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+			return;
+		}
+		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+			return;
+		}
+		$post = $post ?: get_post( $post_id );
+		if ( ! $post || 'post' !== $post->post_type ) {
+			return;
+		}
+		// Defensive: make sure the next get_post() inside scan_post()
+		// reads the freshly saved content rather than a cached copy.
+		clean_post_cache( $post_id );
+		$this->scan_post( (int) $post_id );
+	}
+
+	public function on_remove_post( $post_id ) {
+		global $wpdb;
+		$t = RankWriter_AI_SEO_Healer_DB::issues_table();
+		$wpdb->delete( $t, array( 'post_id' => (int) $post_id ) );
 	}
 
 	public function schedule_recurring() {
@@ -716,6 +750,7 @@ class RankWriter_AI_SEO_Healer {
 			return new WP_Error( 'rwai_no_match', __( 'No matching link was found in the post.', 'rankwriter-ai' ) );
 		}
 		wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( $updated ) ) );
+		clean_post_cache( $post->ID );
 
 		RankWriter_AI_SEO_Healer_DB::log_repair( array(
 			'post_id'      => $post->ID,
@@ -725,7 +760,9 @@ class RankWriter_AI_SEO_Healer {
 			'after_value'  => $updated,
 			'notes'        => sprintf( __( 'Replaced %1$s → %2$s', 'rankwriter-ai' ), $old_url, $new_url ),
 		) );
-		// Re-scan so the count updates immediately.
+		// Re-scan so the count updates immediately. (save_post will also
+		// have fired, but call it explicitly to guarantee the issue list
+		// reflects reality before the redirect.)
 		$this->scan_post( $post->ID );
 		return array( 'before' => $before, 'after' => $updated );
 	}
@@ -755,9 +792,15 @@ class RankWriter_AI_SEO_Healer {
 			$before
 		);
 		if ( $updated === $before ) {
-			return new WP_Error( 'rwai_no_match', __( 'No matching link was found in the post.', 'rankwriter-ai' ) );
+			// The visible link is already gone (probably edited manually
+			// in the post editor between the last scan and now). Clear the
+			// stale issue so the user doesn't keep seeing the notification.
+			RankWriter_AI_SEO_Healer_DB::clear_issue( $post->ID, self::RULE_BROKEN_LINK );
+			$this->scan_post( $post->ID );
+			return new WP_Error( 'rwai_already_clean', __( 'That link is no longer in the post — the issue has been cleared.', 'rankwriter-ai' ) );
 		}
 		wp_update_post( array( 'ID' => $post->ID, 'post_content' => wp_slash( $updated ) ) );
+		clean_post_cache( $post->ID );
 
 		RankWriter_AI_SEO_Healer_DB::log_repair( array(
 			'post_id'      => $post->ID,
@@ -769,6 +812,20 @@ class RankWriter_AI_SEO_Healer {
 		) );
 		$this->scan_post( $post->ID );
 		return array( 'before' => $before, 'after' => $updated );
+	}
+
+	/**
+	 * User-driven safety valve: clear a specific open issue without
+	 * touching the post. Used when the detector got something wrong, or
+	 * when the user has fixed the content via another route.
+	 */
+	public function dismiss_issue( $issue_id ) {
+		$issue = RankWriter_AI_SEO_Healer_DB::get_issue( $issue_id );
+		if ( ! $issue ) {
+			return new WP_Error( 'rwai_no_issue', __( 'Issue not found (it may have already been resolved).', 'rankwriter-ai' ) );
+		}
+		RankWriter_AI_SEO_Healer_DB::clear_issue( (int) $issue['post_id'], (string) $issue['rule'] );
+		return true;
 	}
 
 	/* ============================ Rollback ============================ */

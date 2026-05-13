@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-13
+
+### Fixed
+
+- **SEO Healer — broken-link notification persisting after fix.** Deleting a broken link (or fixing it manually in the WordPress editor) no longer leaves the broken-link notification stuck on screen until the next cron tick. The healer now hooks `save_post`, so any post edit immediately re-scans that post and clears resolved issues right away.
+- **Stale issue detection.** When the user clicks "Delete link" on a link that has already been removed from the post (e.g., edited manually in Gutenberg between scans), the healer now detects the stale state and clears the issue with a clear "no longer in the post — issue cleared" message instead of returning an unhelpful "no matching link" error.
+- **Defensive cache flush.** `clean_post_cache()` is now called after every link replace / delete so the immediate re-scan sees the freshly saved content rather than an in-memory copy.
+
+### Added
+
+- **Dismiss button on every open SEO issue.** Safety valve for cases where the detector got something wrong, or the user has already fixed the underlying problem through another route. Clears the notification without touching the post.
+- **Trash / delete hook.** When a post is trashed or permanently deleted, its open SEO issues are removed automatically so the dashboard doesn't keep counting ghosts.
+
+[1.1.1]: https://github.com/happyjosh-tech/rankwriter-ai/releases/tag/v1.1.1
+
 ## [1.1.0] - 2026-05-13
 
 ### Added

@@ -55,6 +55,8 @@ $health_band = $health >= 80 ? 'rwai-tl-bar-ok' : ( $health >= 50 ? 'rwai-tl-bar
 		<div class="notice notice-warning is-dismissible"><p><?php esc_html_e( 'Repair rolled back.', 'rankwriter-ai' ); ?></p></div>
 	<?php elseif ( 'healer-scanned' === $msg ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Manual scan complete.', 'rankwriter-ai' ); ?></p></div>
+	<?php elseif ( 'healer-dismissed' === $msg ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Issue dismissed.', 'rankwriter-ai' ); ?></p></div>
 	<?php elseif ( 'healer-error' === $msg && $err ) : ?>
 		<div class="notice notice-error is-dismissible"><p><?php echo esc_html( $err ); ?></p></div>
 	<?php endif; ?>
@@ -169,6 +171,12 @@ $health_band = $health >= 80 ? 'rwai-tl-bar-ok' : ( $health >= 50 ? 'rwai-tl-bar
 							<?php else : ?>
 								<span class="rwai-muted"><?php esc_html_e( 'manual', 'rankwriter-ai' ); ?></span>
 							<?php endif; ?>
+							<form method="post" style="display:inline-block;margin-left:4px;" onsubmit="return confirm('<?php echo esc_attr( __( "Dismiss this issue? It will reappear on the next scan if it's still present in the post.", 'rankwriter-ai' ) ); ?>');">
+								<input type="hidden" name="rwai_action" value="healer_dismiss_issue" />
+								<input type="hidden" name="issue_id" value="<?php echo esc_attr( $issue['id'] ); ?>" />
+								<?php wp_nonce_field( RankWriter_AI_Admin::HEALER_NONCE ); ?>
+								<button type="submit" class="button button-small" title="<?php esc_attr_e( 'Already fixed? Dismiss to clear the notification.', 'rankwriter-ai' ); ?>"><?php esc_html_e( 'Dismiss', 'rankwriter-ai' ); ?></button>
+							</form>
 						</td>
 					</tr>
 					<?php if ( ! empty( $broken_links ) ) : ?>
