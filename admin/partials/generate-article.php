@@ -3,14 +3,35 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 /** @var array $data */
-$profiles   = (array) $data['profiles'];
-$style      = (array) $data['style'];
-$api_ready  = (bool) $data['api_ready'];
-$msg        = (string) $data['msg'];
-$err        = (string) $data['err'];
+$profiles    = (array) $data['profiles'];
+$style       = (array) $data['style'];
+$api_ready   = (bool) $data['api_ready'];
+$msg         = (string) $data['msg'];
+$err         = (string) $data['err'];
+$current_job = isset( $data['current_job'] ) ? $data['current_job'] : null;
+$recent_jobs = isset( $data['recent_jobs'] ) && is_array( $data['recent_jobs'] ) ? $data['recent_jobs'] : array();
 
 $selected_profile = isset( $_GET['profile_id'] ) ? absint( $_GET['profile_id'] ) : 0;
 $default_words    = ! empty( $style['average_word_count'] ) ? (int) $style['average_word_count'] : (int) RankWriter_AI_Helpers::get_setting( 'default_word_count', 1500 );
+
+// If the queued job just finished, send the user straight to the post
+// editor — this mirrors the old synchronous redirect behaviour.
+if ( is_array( $current_job ) && 'done' === ( $current_job['status'] ?? '' ) && ! empty( $current_job['post_id'] ) ) {
+	$edit_url = add_query_arg( array( 'post' => (int) $current_job['post_id'], 'action' => 'edit' ), admin_url( 'post.php' ) );
+	?>
+	<script>window.location.replace(<?php echo wp_json_encode( $edit_url ); ?>);</script>
+	<noscript><meta http-equiv="refresh" content="0;url=<?php echo esc_attr( $edit_url ); ?>"></noscript>
+	<?php
+}
+
+// While the job is in-flight (queued or running), auto-refresh every
+// 5 seconds so the user gets the result without having to click reload.
+$is_pending = is_array( $current_job ) && in_array( (string) ( $current_job['status'] ?? '' ), array( 'queued', 'running' ), true );
+if ( $is_pending ) {
+	?>
+	<meta http-equiv="refresh" content="5">
+	<?php
+}
 ?>
 <div class="wrap rwai-wrap">
 	<h1><?php esc_html_e( 'Generate Article', 'rankwriter-ai' ); ?></h1>
@@ -41,6 +62,41 @@ $default_words    = ! empty( $style['average_word_count'] ) ? (int) $style['aver
 
 	<?php if ( 'generate-error' === $msg ) : ?>
 		<div class="notice notice-error is-dismissible"><p><?php echo esc_html( '' !== $err ? $err : __( 'Generation failed.', 'rankwriter-ai' ) ); ?></p></div>
+	<?php endif; ?>
+
+	<?php if ( is_array( $current_job ) ) :
+		$job_status = (string) ( $current_job['status'] ?? '' );
+		$job_topic  = (string) ( $current_job['topic'] ?? '' );
+		?>
+		<?php if ( 'queued' === $job_status ) : ?>
+			<div class="notice notice-info">
+				<p><strong><?php esc_html_e( 'Article queued for background generation.', 'rankwriter-ai' ); ?></strong>
+				<?php
+				printf(
+					/* translators: %s: article topic */
+					esc_html__( 'Topic: %s. This page will refresh every 5 seconds and redirect you to the editor as soon as it\'s ready (typically 1-3 minutes).', 'rankwriter-ai' ),
+					'<em>' . esc_html( $job_topic ) . '</em>' // phpcs:ignore
+				);
+				?></p>
+				<p><?php esc_html_e( 'Why background? Article generation can take 90-180 seconds; running it inline causes nginx 504 Gateway Time-out on most hosts.', 'rankwriter-ai' ); ?></p>
+			</div>
+		<?php elseif ( 'running' === $job_status ) : ?>
+			<div class="notice notice-info">
+				<p><strong><?php esc_html_e( 'Generating now…', 'rankwriter-ai' ); ?></strong>
+				<?php
+				printf(
+					/* translators: %s: article topic */
+					esc_html__( 'Claude is writing your article on "%s". This page will redirect to the editor when it\'s done.', 'rankwriter-ai' ),
+					esc_html( $job_topic )
+				);
+				?></p>
+			</div>
+		<?php elseif ( 'failed' === $job_status ) : ?>
+			<div class="notice notice-error">
+				<p><strong><?php esc_html_e( 'Generation failed.', 'rankwriter-ai' ); ?></strong>
+				<?php echo esc_html( (string) ( $current_job['error'] ?? __( 'Unknown error.', 'rankwriter-ai' ) ) ); ?></p>
+			</div>
+		<?php endif; ?>
 	<?php endif; ?>
 
 	<?php if ( empty( $profiles ) ) : ?>
@@ -118,5 +174,59 @@ $default_words    = ! empty( $style['average_word_count'] ) ? (int) $style['aver
 			</p>
 		</form>
 		<p class="description"><?php esc_html_e( 'The article is saved as a draft post you can review and publish from the Posts screen.', 'rankwriter-ai' ); ?></p>
+	<?php endif; ?>
+
+	<?php if ( ! empty( $recent_jobs ) ) : ?>
+		<hr style="margin:32px 0 16px 0;">
+		<h2><?php esc_html_e( 'Recent generations', 'rankwriter-ai' ); ?></h2>
+		<table class="widefat striped">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'Topic', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Queued', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Finished', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Result', 'rankwriter-ai' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $recent_jobs as $job ) :
+					$status   = (string) ( $job['status']   ?? '' );
+					$topic    = (string) ( $job['topic']    ?? '' );
+					$queued   = (string) ( $job['queued_at'] ?? '' );
+					$ended    = (string) ( $job['ended_at'] ?? '' );
+					$post_id  = (int)    ( $job['post_id']  ?? 0 );
+					$error    = (string) ( $job['error']    ?? '' );
+
+					$badge_colors = array(
+						'queued'  => '#dba617',
+						'running' => '#2271b1',
+						'done'    => '#00a32a',
+						'failed'  => '#d63638',
+					);
+					$badge_color = $badge_colors[ $status ] ?? '#646970';
+					?>
+					<tr>
+						<td><?php echo esc_html( $topic ); ?></td>
+						<td>
+							<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:<?php echo esc_attr( $badge_color ); ?>;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">
+								<?php echo esc_html( $status ); ?>
+							</span>
+						</td>
+						<td><?php echo esc_html( $queued ); ?></td>
+						<td><?php echo esc_html( $ended ); ?></td>
+						<td>
+							<?php if ( 'done' === $status && $post_id ) : ?>
+								<a href="<?php echo esc_url( add_query_arg( array( 'post' => $post_id, 'action' => 'edit' ), admin_url( 'post.php' ) ) ); ?>"><?php esc_html_e( 'Open post', 'rankwriter-ai' ); ?></a>
+							<?php elseif ( 'failed' === $status ) : ?>
+								<span style="color:#d63638;"><?php echo esc_html( $error ); ?></span>
+							<?php else : ?>
+								—
+							<?php endif; ?>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
 	<?php endif; ?>
 </div>

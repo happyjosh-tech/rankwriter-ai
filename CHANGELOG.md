@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-05-14
+
+### Added — Autopilot diagnostics + manual "Run now"
+
+- **Autopilot status panel.** New diagnostics card at the top of the Autopilot screen shows: whether autopilot is enabled, whether a cron event is actually registered, next-run time in both site time and UTC, current server time in both, the WP timezone string (with a warning if it's a raw `+00:00` offset rather than a named timezone like `Africa/Lagos`), whether `DISABLE_WP_CRON` is set in `wp-config.php`, and the current queue length. Most "autopilot isn't running" reports trace back to one of these four conditions — making them visible means the user can self-diagnose in 5 seconds instead of digging through code.
+- **Timezone offset warning.** If your WP timezone is set to a raw UTC offset (e.g. `+00:00`) rather than a named city, the panel surfaces the exact mismatch: "Your site timezone is +00:00 — if you live in Nigeria (UTC+1) and type 16:14, autopilot will fire at 17:14 your local time." Direct link to Settings → General with instructions to switch to `Africa/Lagos`.
+- **DISABLE_WP_CRON detection.** If the constant is true in `wp-config.php`, the panel warns that scheduled events won't fire on visitor traffic and gives the exact `wp-cron.php` URL to point a system cron at.
+- **"Run autopilot now" button.** Schedules a one-shot tick via the dedicated `rwai_autopilot_run_now` hook (separate hook so it doesn't collide with the recurring event's 10-minute dedup window) and fires `spawn_cron()` to kick a non-blocking background worker. Lets you confirm autopilot actually produces an article without enabling the schedule first or waiting for the scheduled time. Uses the same async pattern as v1.2.3's manual generation so it doesn't 504.
+- **Recovery sweep covers the new hook.** The 1.2.2 schedule-recovery sweep now also kicks stalled `rwai_autopilot_run_now` events.
+
+### Changed
+
+- **`Autopilot::tick()` accepts an optional `$force` parameter.** Lets the run-now flow proceed without flipping the saved enabled flag on/off (which would have raced with concurrent save_autopilot writes).
+
+## [1.2.3] - 2026-05-14
+
+### Fixed
+
+- **"504 Gateway Time-out" on manual article generation.** The Generate Article page ran the entire pipeline (keyword research + intent detection + main Claude call + humanizer + image sourcing + fact-checker + risk scan) synchronously inside the admin POST request — easily 90-180 seconds end-to-end. On most managed hosts nginx `proxy_read_timeout` is ~60s and PHP-FPM `request_terminate_timeout` is ~30-60s, so the browser saw nginx's 504 page even though Claude was still running on the backend. Reproduced on every new domain because every shared host / cheap VPS uses similar defaults.
+- **Now async via WP-Cron loopback.** Added `RankWriter_AI_Generation_Queue`. Submitting the form enqueues a job, fires `spawn_cron()` to trigger a non-blocking loopback request to `wp-cron.php`, and redirects the browser to a "Generating in background…" status page that auto-refreshes every 5 seconds and redirects to the post editor as soon as the job completes (typically 1-3 minutes). The background request can run as long as it needs to — your browser is no longer behind nginx's timeout.
+- **Recent generations panel.** The Generate Article page now shows the last 8 jobs (queued / running / done / failed) so you can see what's in flight and jump straight to any completed post. Failed jobs show the exact Claude / API error message.
+- **Stalled generation jobs auto-recover.** The schedule-recovery sweep added in 1.2.2 now also kicks `rwai_generate_async` cron events whose next-run is in the past, so a job stuck because WP-Cron itself stalled gets re-fired on the next admin page load instead of sitting forever.
+
+## [1.2.2] - 2026-05-14
+
+### Fixed
+
+- **Scheduled posts never published (the "Missed schedule" symptom).** WordPress relies on WP-Cron, which only fires when a visitor hits the site. On low-traffic sites, a post scheduled for e.g. 16:14 could sit at `post_status="future"` long past its publish time. Added a `RankWriter_AI_Schedule_Recovery` sweep that runs on `init` + `wp_loaded` (throttled to once per minute) and publishes every post stuck in `future` with `post_date_gmt <= now` via `wp_publish_post()` so transition hooks fire properly. The same sweep also detects any RankWriter cron hook (Autopilot, PSE queue, Pinterest scheduler, SEO Healer, Refresher, Gap Detector, Seasonal, Blog Analysis) whose next-run is in the past and calls `spawn_cron()` so the missed tick fires on the current request instead of waiting for the next traffic event.
+- **One-click recovery from the Autopilot screen.** New "Publish missed scheduled posts now" button under the Autopilot page lets an admin force the sweep on demand and shows how many posts were published + how many cron hooks were kicked.
+
+### Changed — Human title generation
+
+- **Auto-fill topic suggester (Generate article ✨ AI fill) no longer defaults to the AI-listicle template.** Previously it returned generic "Top 15 X for Y in 2026 (With Z)" titles — the most over-used AI pattern. Rewrote the system prompt with a shared `RankWriter_AI_AI_Suggester::human_title_rules()` block that bans the giveaway templates ("Top N {plural} for {audience} in {year} (With {modifier})", "Ultimate Guide to", trailing parentheticals, year tacked on as marketing tag, round 5/10/15/20 numbers), enforces opener variety, and shows good/bad calibration examples.
+- **Title Lab variant generator now shares the same human rules.** All five styles (SEO / viral / Discover / Pinterest / social) inherit the anti-template guardrails, and the prompt now explicitly demands opener variety across the three variants in a single style instead of producing three minor rewrites of the same template.
+
 ## [1.2.1] - 2026-05-13
 
 ### Fixed

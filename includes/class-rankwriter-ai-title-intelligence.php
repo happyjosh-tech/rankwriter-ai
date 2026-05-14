@@ -167,7 +167,13 @@ class RankWriter_AI_Title_Intelligence {
 		}
 		$count = max( 1, min( 5, (int) $count ) );
 
+		$human_rules = class_exists( 'RankWriter_AI_AI_Suggester' )
+			? RankWriter_AI_AI_Suggester::human_title_rules()
+			: '';
+
 		$system = "You are a top-tier headline writer who has produced viral posts that hold up to scrutiny. You write titles that are CTR-optimized but never misleading, never violate AdSense Publisher Policies, and never use cheap clickbait patterns (\"You won't believe\", \"Doctors hate\", \"shocking truth\", \"this one trick\"). Every title must deliver on its promise.\n\n"
+			. "Critically: your titles must NOT pattern-match the standard AI listicle template (\"Top N X for Y in YEAR (With Z)\"). A skeptical reader scrolling Reddit must not be able to tell these were AI-generated.\n\n"
+			. ( $human_rules ? $human_rules . "\n\n" : '' )
 			. "## Output rules\n"
 			. "Return ONLY valid JSON with this exact shape:\n"
 			. "{\n"
@@ -178,19 +184,25 @@ class RankWriter_AI_Title_Intelligence {
 			. "  \"social\":    [\"...\", \"...\", \"...\"]\n"
 			. "}\n\n"
 			. "Each array has exactly {$count} titles. No preamble, no markdown fences.\n\n"
+			. "Across the {$count} variants in a single style, VARY the opener archetype. Do not produce three titles that all start with \"Top\", or all use the same parenthetical structure, or all end with the year. Different angles, different rhythms.\n\n"
 			. "## Per-style rules\n"
-			. "- **seo**: 50-60 chars. Includes the primary search term verbatim near the front. Clear, descriptive, evergreen.\n"
-			. "- **viral**: 60-80 chars. Curiosity + specificity. Strong opening hook. Numbered when possible.\n"
-			. "- **discover**: 50-70 chars. Human, story-like, current. Reads like a magazine headline. No SEO stuffing.\n"
-			. "- **pinterest**: 60-100 chars. Descriptive + practical. Often \"How to\", \"X Tips\", \"X Ideas\". Includes search terms.\n"
-			. "- **social**: 40-70 chars. Punchy, shareable, often a question or a strong claim. Optimized for X/Threads/Facebook.\n\n"
+			. "- **seo**: 50-60 chars. Includes the primary search term verbatim near the front, but framed naturally — not stuffed. Clear, descriptive, evergreen. Avoid \"Ultimate Guide to\" / \"Complete Guide to\" templates.\n"
+			. "- **viral**: 60-80 chars. Curiosity + specificity. Strong opening hook. A real claim a person would make — not generic listicle padding.\n"
+			. "- **discover**: 50-70 chars. Human, story-like, current. Reads like a magazine headline (Atlantic / Bloomberg / The Verge). No SEO stuffing. No year tacked on the end.\n"
+			. "- **pinterest**: 60-100 chars. Descriptive + practical. Specific outcome or constraint. Avoid \"X Tips\" if there's a more specific framing available.\n"
+			. "- **social**: 40-70 chars. Punchy, shareable, often a question, a contrarian take, or a strong specific claim. Optimized for X/Threads/Facebook.\n\n"
 			. "## Banned patterns (NEVER use):\n"
+			. "- \"Top N {plural} for {audience} in {year} (With {modifier})\" — the AI-listicle giveaway\n"
+			. "- \"Ultimate Guide to\", \"Complete Guide to\", \"Definitive Guide to\", \"Everything You Need to Know\"\n"
+			. "- Trailing parentheticals: \"(With Deadlines)\", \"(Updated for 2026)\", \"(For Beginners)\"\n"
+			. "- The year tacked on the end as a marketing tag\n"
 			. "- \"You won't believe\", \"What happened next will shock\", \"This one trick\"\n"
 			. "- \"Doctors hate\", \"They don't want you to know\", \"The secret X doesn't want\"\n"
 			. "- Vague pronouns: \"This\", \"It\", \"The Answer\" without an antecedent\n"
 			. "- Misleading promises (\"in 24 hours\" when not realistic)\n"
 			. "- Excessive exclamation marks\n"
-			. "- ALL CAPS (sentence case or title case only)\n\n"
+			. "- ALL CAPS (sentence case or title case only)\n"
+			. "- Round marketing numbers (5/10/15/20) when an odder number (3/7/11/17/23) would still be honest\n\n"
 			. "Every title must be defensible: a reader who clicks should get exactly what the title promised.";
 
 		$user_lines = array();

@@ -3,13 +3,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 /** @var array $data */
-$cfg       = (array) $data['config'];
-$profiles  = (array) $data['profiles'];
-$queue     = (array) $data['queue'];
-$log       = (array) $data['log'];
-$next_run  = (string) $data['next_run'];
-$msg       = (string) $data['msg'];
-$err       = (string) $data['err'];
+$cfg         = (array) $data['config'];
+$profiles    = (array) $data['profiles'];
+$queue       = (array) $data['queue'];
+$log         = (array) $data['log'];
+$next_run    = (string) $data['next_run'];
+$diagnostics = isset( $data['diagnostics'] ) && is_array( $data['diagnostics'] ) ? $data['diagnostics'] : array();
+$msg         = (string) $data['msg'];
+$err         = (string) $data['err'];
 ?>
 <div class="wrap rwai-wrap">
 	<h1><?php esc_html_e( 'Autopilot — automated fresh-content engine', 'rankwriter-ai' ); ?></h1>
@@ -23,7 +24,159 @@ $err       = (string) $data['err'];
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Queue cleared.', 'rankwriter-ai' ); ?></p></div>
 	<?php elseif ( 'autopilot-error' === $msg ) : ?>
 		<div class="notice notice-error is-dismissible"><p><?php echo esc_html( $err ?: __( 'Action failed.', 'rankwriter-ai' ) ); ?></p></div>
+	<?php elseif ( 'autopilot-run-now' === $msg ) : ?>
+		<div class="notice notice-success is-dismissible"><p>
+			<?php esc_html_e( 'Autopilot dispatched to a background worker. Watch the Run log below — a new entry should appear within 1-3 minutes. Refresh the page to see updates.', 'rankwriter-ai' ); ?>
+		</p></div>
 	<?php endif; ?>
+
+	<?php
+	$tz_is_offset    = ! empty( $diagnostics['tz_is_offset'] );
+	$disable_wp_cron = ! empty( $diagnostics['disable_wp_cron'] );
+	if ( $tz_is_offset || $disable_wp_cron ) : ?>
+		<div class="notice notice-warning" style="padding:14px 18px;">
+			<p style="margin:0 0 6px 0;"><strong><?php esc_html_e( 'Autopilot diagnostics flagged issues', 'rankwriter-ai' ); ?></strong></p>
+			<ul style="margin:6px 0 0 18px;list-style:disc;">
+				<?php if ( $tz_is_offset ) : ?>
+					<li>
+						<?php
+						printf(
+							/* translators: %s: current timezone (e.g. +00:00) */
+							esc_html__( 'Your WordPress site timezone is set to "%s" — a raw UTC offset, not a named timezone. The "Time of day" you type below is interpreted in this timezone. If you live in Nigeria (UTC+1) but the site is set to +00:00, a 16:14 setting will fire at 17:14 Nigeria time.', 'rankwriter-ai' ),
+							esc_html( $diagnostics['tz_string'] ?: 'UTC' )
+						);
+						?>
+						<br>
+						<strong>
+							<?php
+							printf(
+								/* translators: %s: link to WP General Settings */
+								wp_kses_post( __( 'Fix: open %s and set Timezone to a named city like "Africa/Lagos" (Nigeria) so the time you type matches your local clock.', 'rankwriter-ai' ) ),
+								'<a href="' . esc_url( admin_url( 'options-general.php' ) ) . '">' . esc_html__( 'Settings → General', 'rankwriter-ai' ) . '</a>'
+							);
+							?>
+						</strong>
+					</li>
+				<?php endif; ?>
+				<?php if ( $disable_wp_cron ) : ?>
+					<li>
+						<?php
+						printf(
+							/* translators: %s: cron URL */
+							wp_kses_post( __( '<code>DISABLE_WP_CRON</code> is set to <code>true</code> in <code>wp-config.php</code>. WordPress scheduled events (including autopilot) will not fire on visitor traffic. Add a real system cron hitting <code>%s</code> every minute, or remove the constant.', 'rankwriter-ai' ) ),
+							esc_html( $diagnostics['cron_url'] ?? '' )
+						);
+						?>
+					</li>
+				<?php endif; ?>
+			</ul>
+		</div>
+	<?php endif; ?>
+
+	<?php if ( ! empty( $diagnostics ) ) : ?>
+		<div class="rwai-card" style="margin:12px 0 18px 0;padding:14px 18px;background:#f6f7f7;">
+			<h2 style="margin-top:0;"><?php esc_html_e( 'Autopilot status', 'rankwriter-ai' ); ?></h2>
+			<table class="widefat" style="background:transparent;">
+				<tbody>
+					<tr>
+						<th style="width:240px;"><?php esc_html_e( 'Enabled?', 'rankwriter-ai' ); ?></th>
+						<td>
+							<?php if ( ! empty( $cfg['enabled'] ) ) : ?>
+								<span style="color:#00a32a;">✔ <?php esc_html_e( 'Yes', 'rankwriter-ai' ); ?></span>
+							<?php else : ?>
+								<span style="color:#d63638;">✘ <?php esc_html_e( 'No — toggle "Enable autopilot" below and click Save to register the cron event.', 'rankwriter-ai' ); ?></span>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Cron event registered?', 'rankwriter-ai' ); ?></th>
+						<td>
+							<?php if ( ! empty( $diagnostics['next_run_ts'] ) ) : ?>
+								<span style="color:#00a32a;">✔ <?php esc_html_e( 'Yes', 'rankwriter-ai' ); ?></span>
+							<?php else : ?>
+								<span style="color:#d63638;">✘ <?php esc_html_e( 'No event scheduled. If autopilot is enabled, click Save again to re-register.', 'rankwriter-ai' ); ?></span>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Next run (site time)', 'rankwriter-ai' ); ?></th>
+						<td><?php echo esc_html( $diagnostics['next_run_local'] ?: '—' ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Next run (UTC)', 'rankwriter-ai' ); ?></th>
+						<td><?php echo esc_html( $diagnostics['next_run_utc'] ?: '—' ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Server now (site time)', 'rankwriter-ai' ); ?></th>
+						<td><?php echo esc_html( $diagnostics['now_local'] ?? '' ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Server now (UTC)', 'rankwriter-ai' ); ?></th>
+						<td><?php echo esc_html( $diagnostics['now_utc'] ?? '' ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'WP timezone', 'rankwriter-ai' ); ?></th>
+						<td>
+							<code><?php echo esc_html( $diagnostics['tz_string'] ?: 'UTC' ); ?></code>
+							<?php if ( $tz_is_offset ) : ?>
+								<span style="color:#d63638;margin-left:8px;">⚠ <?php esc_html_e( 'Raw offset — use a named timezone instead', 'rankwriter-ai' ); ?></span>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'DISABLE_WP_CRON', 'rankwriter-ai' ); ?></th>
+						<td>
+							<?php if ( $disable_wp_cron ) : ?>
+								<span style="color:#d63638;">true — autopilot needs a real system cron</span>
+							<?php else : ?>
+								<span style="color:#00a32a;">false (WP-Cron active)</span>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Queue length', 'rankwriter-ai' ); ?></th>
+						<td><?php echo (int) count( $queue ); ?></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<form method="post" style="margin-top:14px;">
+				<input type="hidden" name="rwai_action" value="run_autopilot_now" />
+				<?php wp_nonce_field( RankWriter_AI_Admin::AUTOPILOT_NONCE ); ?>
+				<button type="submit" class="button button-primary"><?php esc_html_e( '▶ Run autopilot now (one article)', 'rankwriter-ai' ); ?></button>
+				<span class="description" style="margin-left:8px;">
+					<?php esc_html_e( 'Generates one article in the background, no need to wait for the scheduled time. Use this to confirm autopilot actually works before trusting the schedule.', 'rankwriter-ai' ); ?>
+				</span>
+			</form>
+		</div>
+	<?php endif; ?>
+
+	<?php
+	if ( isset( $_GET['rwai_recovery_published'] ) || isset( $_GET['rwai_recovery_kicked'] ) ) {
+		$pubbed = isset( $_GET['rwai_recovery_published'] ) ? (int) $_GET['rwai_recovery_published'] : 0;
+		$kicked = isset( $_GET['rwai_recovery_kicked'] ) ? (int) $_GET['rwai_recovery_kicked'] : 0;
+		?>
+		<div class="notice notice-success is-dismissible"><p>
+			<?php
+			printf(
+				/* translators: 1: count of posts published, 2: count of cron hooks kicked */
+				esc_html__( 'Recovery run: %1$d missed scheduled post(s) published, %2$d stalled cron hook(s) kicked.', 'rankwriter-ai' ),
+				$pubbed,
+				$kicked
+			);
+			?>
+		</p></div>
+	<?php } ?>
+
+	<div class="notice notice-info" style="padding:12px 16px;">
+		<p style="margin:0 0 8px 0;"><strong><?php esc_html_e( 'Missed schedule? Stuck post?', 'rankwriter-ai' ); ?></strong>
+		<?php esc_html_e( 'WordPress relies on visitor traffic to fire scheduled posts. If a post is past its publish time but still says "Scheduled", click below to publish it now and kick any stalled Autopilot ticks.', 'rankwriter-ai' ); ?></p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0;">
+			<input type="hidden" name="action" value="rwai_publish_missed_now" />
+			<?php wp_nonce_field( 'rwai_publish_missed_now' ); ?>
+			<button type="submit" class="button"><?php esc_html_e( 'Publish missed scheduled posts now', 'rankwriter-ai' ); ?></button>
+		</form>
+	</div>
 
 	<form method="post" class="rwai-form" data-rwai-ai-context="autopilot">
 		<input type="hidden" name="rwai_action" value="save_autopilot" />

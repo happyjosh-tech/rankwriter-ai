@@ -18,9 +18,33 @@ class RankWriter_AI_Autopilot {
 	const LOG_OPTION    = 'rwai_autopilot_log';
 	const CONFIG_OPTION = 'rwai_autopilot_config';
 	const CRON_HOOK     = 'rwai_autopilot_run';
+	const CRON_HOOK_NOW = 'rwai_autopilot_run_now';
 
 	public function register_hooks() {
-		add_action( self::CRON_HOOK, array( $this, 'tick' ) );
+		add_action( self::CRON_HOOK,     array( $this, 'tick' ) );
+		// Separate hook for the "Run now" admin button so it doesn't
+		// collide with the recurring-event dedup logic inside
+		// wp_schedule_single_event() (which would skip a same-hook event
+		// scheduled within 10 minutes of an existing one).
+		add_action( self::CRON_HOOK_NOW, array( $this, 'force_tick' ) );
+	}
+
+	/**
+	 * Force-run one tick regardless of the enabled flag. Used by the
+	 * "Run autopilot now" admin button so you can test generation
+	 * without enabling the recurring schedule first.
+	 */
+	public function force_tick() {
+		@set_time_limit( 600 );
+		@ignore_user_abort( true );
+
+		$cfg = $this->get_config();
+		if ( empty( $cfg['profile_id'] ) ) {
+			$this->log( 'error', __( 'Run-now skipped: no category profile selected in autopilot config.', 'rankwriter-ai' ) );
+			return;
+		}
+		$this->log( 'info', __( 'Run-now triggered.', 'rankwriter-ai' ) );
+		$this->tick( true );
 	}
 
 	public function get_config() {
@@ -219,10 +243,15 @@ class RankWriter_AI_Autopilot {
 
 	/**
 	 * Cron tick. Pulls up to `max_per_run` items off the queue and generates.
+	 *
+	 * @param bool $force  When true, ignore the enabled flag (used by the
+	 *                     "Run autopilot now" admin button so the user
+	 *                     can test generation without enabling the
+	 *                     recurring schedule first).
 	 */
-	public function tick() {
+	public function tick( $force = false ) {
 		$cfg = $this->get_config();
-		if ( empty( $cfg['enabled'] ) ) {
+		if ( empty( $cfg['enabled'] ) && ! $force ) {
 			return;
 		}
 

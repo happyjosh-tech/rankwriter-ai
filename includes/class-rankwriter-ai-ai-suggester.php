@@ -205,9 +205,13 @@ class RankWriter_AI_AI_Suggester {
 				$profile    = $this->profiles->get( $profile_id );
 				$ctx        = $profile ? "Category: \"{$profile['name']}\". Niche: {$profile['niche_description']}." : '';
 				$avoid      = $this->avoid_topics_hint();
+				$year       = current_time( 'Y' );
+				$month      = current_time( 'F' );
+				$human_system = $system_base . "\n\n" . self::human_title_rules();
 				return array(
-					$system_base,
-					"Suggest ONE fresh, SEO-friendly article topic. " . $ctx . " " . $avoid . " The topic should be specific (not generic), reflect what readers are actively searching for in " . current_time( 'Y' ) . ", and feel publishable today. Return ONLY the article title — one line, no quotes, no \"Topic:\" prefix.",
+					$human_system,
+					"Suggest ONE article title a real human editor would publish in {$month} {$year}. {$ctx} {$avoid}\n\n"
+					. "It must sound like a person wrote it — NOT like the standard AI-listicle template. Apply the human title rules above strictly. Return ONLY the title — one line, no quotes, no \"Topic:\" prefix.",
 				);
 
 			case 'generate_article:extra_context':
@@ -281,6 +285,57 @@ class RankWriter_AI_AI_Suggester {
 			return '';
 		}
 		return trim( wp_strip_all_tags( (string) $payload[ $key ] ) );
+	}
+
+	/**
+	 * Shared human-title rules. Embedded into the topic auto-fill prompt
+	 * (single suggestion) AND the Title Intelligence variant generator
+	 * (5 styles × N variants) so both code paths stop producing the
+	 * recognizable "Top 15 X for Y in 2026 (With Z)" AI template.
+	 */
+	public static function human_title_rules() {
+		return <<<RULES
+## Human title rules — non-negotiable
+
+These titles must not pattern-match the typical AI listicle template. A reader scrolling a feed should think "a person wrote this" — not "this is the generic Top-15 SEO format."
+
+DO:
+- Vary the OPENING — never default to "Top N" / "Best N" / "Ultimate Guide to" every time. Use openers like "I tried…", "Why X is…", "The truth about…", "Closing in January:", "Before you apply for…", "Stop X — here's what actually works", "Inside the…", "Reading {topic} like a {persona}".
+- Sound like editorial copy you'd see in The Atlantic, The Verge, Bloomberg, BuzzFeed, or a thoughtful Substack — not a generic SEO blog.
+- Be specific about a date, a place, a person, a dollar amount, or a real constraint. "Closing in January" beats "With January Deadlines." "$50K stipend" beats "Fully funded."
+- Use direct address ("you", "your") or first person ("I", "we") about half the time.
+- Use natural punctuation — em dashes, colons, occasional questions. Skip parenthetical qualifiers like "(With January Deadlines)" — they read as SEO furniture.
+- When a number is used, make it interesting (3, 7, 11, 17, 23) — not the round-marketing 5/10/15/20.
+
+DELETE on sight:
+- "Top N {plural noun} for {audience} in {year} (With {modifier})" — the single most over-used AI title template.
+- "Ultimate Guide to X" / "Comprehensive Guide to X" / "Everything You Need to Know About X"
+- "X: A Complete Guide" / "The Definitive Guide to X"
+- Trailing parentheticals: "(With Deadlines)", "(Updated for 2026)", "(For Beginners)"
+- "Unlock", "Master", "Discover", "Boost", "Skyrocket", "Maximize", "Game-changer", "Revolutionary"
+- "You won't believe", "Shocking", "Doctors hate", "This one trick"
+- Stuffing every keyword into one line ("Fully Funded Scholarships for International Students With Deadlines 2026")
+- The year tacked on at the end as a marketing tag ("…in 2026")
+- ALL CAPS words
+- More than one exclamation mark; or any exclamation mark in a non-emotional topic
+
+PATTERN VARIETY — rotate across these archetypes instead of repeating one:
+- A specific claim:           "{Org} just opened {N} fully-funded {thing} — applications close {month}"
+- A pointed question:         "Are fully-funded scholarships still worth the visa hassle?"
+- A reframe:                  "Stop chasing every scholarship. Apply to these {N}."
+- A first-person guide:       "I sent {N} scholarship applications last year. Here's what actually moved the needle."
+- A list with attitude:       "{N} scholarships that pay tuition AND stipend (no fine print)"
+- A deadline-led hook:        "Closing this {month}: {N} scholarships most {audience} miss"
+- A contrarian take:          "The {adjective} scholarship advice that's quietly wrong"
+
+GOOD vs BAD — calibrate to these:
+BAD:   "Top 15 Fully Funded Scholarships for International Students in 2026 (With January Deadlines)"
+GOOD:  "Closing this January: 11 fully-funded scholarships most international applicants miss"
+GOOD:  "I tracked every January-deadline scholarship. These 11 are still worth applying to."
+GOOD:  "The fully-funded scholarship list nobody's sharing — and the 11 closing first"
+BAD:   "Ultimate Guide to Remote Jobs for Beginners in 2026"
+GOOD:  "Remote-job advice for beginners that nobody tells you — from someone who's hired 40 of them"
+RULES;
 	}
 
 	/**

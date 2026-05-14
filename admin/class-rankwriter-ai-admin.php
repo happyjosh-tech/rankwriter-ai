@@ -395,6 +395,9 @@ class RankWriter_AI_Admin {
 			case 'clear_autopilot_queue':
 				$this->handle_clear_autopilot();
 				break;
+			case 'run_autopilot_now':
+				$this->handle_run_autopilot_now();
+				break;
 			case 'save_legal_settings':
 				$this->handle_save_legal_settings();
 				break;
@@ -1182,6 +1185,33 @@ class RankWriter_AI_Admin {
 		exit;
 	}
 
+	/**
+	 * Schedule an immediate autopilot tick via the dedicated run-now hook
+	 * and kick spawn_cron() so it fires in a non-blocking background
+	 * request — keeps the user's browser from sitting on a 504 while
+	 * the generator does its 90-180s of work.
+	 */
+	private function handle_run_autopilot_now() {
+		check_admin_referer( self::AUTOPILOT_NONCE );
+
+		// Refill the queue if it's empty so "Run now" actually has
+		// something to generate. Best-effort — if the user hasn't
+		// configured seeds yet, the tick log will explain why.
+		$pilot = new RankWriter_AI_Autopilot();
+		$queue = $pilot->get_queue();
+		if ( empty( $queue ) ) {
+			$pilot->refill_queue();
+		}
+
+		wp_schedule_single_event( time() + 1, RankWriter_AI_Autopilot::CRON_HOOK_NOW );
+		if ( function_exists( 'spawn_cron' ) ) {
+			spawn_cron();
+		}
+
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::AUTOPILOT_SLUG, array( 'rwai_msg' => 'autopilot-run-now' ) ) );
+		exit;
+	}
+
 	private function handle_generate_article() {
 		check_admin_referer( self::GENERATE_NONCE );
 
@@ -1196,17 +1226,48 @@ class RankWriter_AI_Admin {
 			$override_id = absint( $picker_raw );
 		}
 
-		$gen   = new RankWriter_AI_Content_Generator();
-		$post_id = $gen->generate(
-			array(
-				'profile_id'               => isset( $_POST['profile_id'] ) ? absint( $_POST['profile_id'] ) : 0,
-				'topic'                    => isset( $_POST['topic'] ) ? sanitize_text_field( wp_unslash( $_POST['topic'] ) ) : '',
-				'word_count'               => isset( $_POST['word_count'] ) ? absint( $_POST['word_count'] ) : 0,
-				'extra_context'            => isset( $_POST['extra_context'] ) ? sanitize_textarea_field( wp_unslash( $_POST['extra_context'] ) ) : '',
-				'override_wp_category_id'  => $override_id,
-				'override_wp_category_new' => $override_new,
-			)
+		$args = array(
+			'profile_id'               => isset( $_POST['profile_id'] ) ? absint( $_POST['profile_id'] ) : 0,
+			'topic'                    => isset( $_POST['topic'] ) ? sanitize_text_field( wp_unslash( $_POST['topic'] ) ) : '',
+			'word_count'               => isset( $_POST['word_count'] ) ? absint( $_POST['word_count'] ) : 0,
+			'extra_context'            => isset( $_POST['extra_context'] ) ? sanitize_textarea_field( wp_unslash( $_POST['extra_context'] ) ) : '',
+			'override_wp_category_id'  => $override_id,
+			'override_wp_category_new' => $override_new,
 		);
+
+		// Cheap upfront validation so obvious mistakes don't sit in the
+		// queue waiting for a worker to mark them failed.
+		if ( empty( $args['topic'] ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::GENERATE_SLUG, array( 'rwai_msg' => 'generate-error', 'rwai_err' => rawurlencode( __( 'Topic is required.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+		if ( empty( $args['profile_id'] ) ) {
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::GENERATE_SLUG, array( 'rwai_msg' => 'generate-error', 'rwai_err' => rawurlencode( __( 'Select a category profile.', 'rankwriter-ai' ) ) ) ) );
+			exit;
+		}
+
+		// Enqueue the job and return immediately. The actual generation
+		// runs inside a non-blocking WP-Cron loopback request triggered
+		// by spawn_cron(), so the browser doesn't sit waiting for
+		// 90-180s while Claude writes — which is what was producing the
+		// nginx "504 Gateway Time-out" error on this admin page.
+		if ( class_exists( 'RankWriter_AI_Generation_Queue' ) ) {
+			$queue  = new RankWriter_AI_Generation_Queue();
+			$job_id = $queue->enqueue( $args );
+			wp_safe_redirect( RankWriter_AI_Helpers::admin_url(
+				self::GENERATE_SLUG,
+				array(
+					'rwai_msg' => 'generate-queued',
+					'job'      => rawurlencode( $job_id ),
+				)
+			) );
+			exit;
+		}
+
+		// Legacy synchronous fallback if the queue class is missing for
+		// some reason. Still likely to 504 on slow hosts.
+		$gen   = new RankWriter_AI_Content_Generator();
+		$post_id = $gen->generate( $args );
 
 		if ( is_wp_error( $post_id ) ) {
 			wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::GENERATE_SLUG, array( 'rwai_msg' => 'generate-error', 'rwai_err' => rawurlencode( $post_id->get_error_message() ) ) ) );
@@ -1299,12 +1360,29 @@ class RankWriter_AI_Admin {
 		$profiles = new RankWriter_AI_Category_Profiles();
 		$style    = new RankWriter_AI_Style_Profile();
 		$client   = new RankWriter_AI_Claude_Client();
+
+		// Live job status for the in-flight queued generation (if any),
+		// plus a recent-jobs list so the user can see what's pending
+		// without leaving the page.
+		$current_job = null;
+		$recent_jobs = array();
+		if ( class_exists( 'RankWriter_AI_Generation_Queue' ) ) {
+			$queue = new RankWriter_AI_Generation_Queue();
+			if ( isset( $_GET['job'] ) ) {
+				$job_id      = sanitize_text_field( wp_unslash( $_GET['job'] ) );
+				$current_job = $queue->get_job( $job_id );
+			}
+			$recent_jobs = $queue->get_recent( 8 );
+		}
+
 		$data = array(
-			'profiles'  => $profiles->get_all(),
-			'style'     => $style->get(),
-			'api_ready' => $client->is_configured(),
-			'msg'       => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
-			'err'       => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
+			'profiles'    => $profiles->get_all(),
+			'style'       => $style->get(),
+			'api_ready'   => $client->is_configured(),
+			'msg'         => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+			'err'         => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
+			'current_job' => $current_job,
+			'recent_jobs' => $recent_jobs,
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/generate-article.php';
 	}
@@ -1334,14 +1412,38 @@ class RankWriter_AI_Admin {
 		}
 		$pilot    = new RankWriter_AI_Autopilot();
 		$profiles = new RankWriter_AI_Category_Profiles();
+
+		// Diagnostics — surfaces the most common reasons autopilot looks
+		// "broken": WP timezone set to a bare UTC offset (so the run-time
+		// the user typed is in the wrong tz), DISABLE_WP_CRON set in
+		// wp-config.php, or the cron event simply never registered
+		// because enabled=0 when the user clicked Save.
+		$next_run_ts  = wp_next_scheduled( RankWriter_AI_Autopilot::CRON_HOOK );
+		$tz_string    = function_exists( 'wp_timezone_string' ) ? (string) wp_timezone_string() : (string) get_option( 'timezone_string', 'UTC' );
+		$tz_is_offset = (bool) preg_match( '/^[+-]\d{2}:?\d{2}$/', $tz_string ) || '' === $tz_string;
+		$disable_cron = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+
+		$diagnostics = array(
+			'next_run_ts'      => $next_run_ts ? (int) $next_run_ts : 0,
+			'next_run_local'   => $next_run_ts ? wp_date( 'Y-m-d H:i:s', (int) $next_run_ts ) : '',
+			'next_run_utc'     => $next_run_ts ? gmdate( 'Y-m-d H:i:s', (int) $next_run_ts ) . ' UTC' : '',
+			'now_local'        => wp_date( 'Y-m-d H:i:s' ),
+			'now_utc'          => gmdate( 'Y-m-d H:i:s' ) . ' UTC',
+			'tz_string'        => $tz_string,
+			'tz_is_offset'     => $tz_is_offset,
+			'disable_wp_cron'  => $disable_cron,
+			'cron_url'         => site_url( 'wp-cron.php' ),
+		);
+
 		$data = array(
-			'config'   => $pilot->get_config(),
-			'profiles' => $profiles->get_all(),
-			'queue'    => $pilot->get_queue(),
-			'log'      => $pilot->get_log( 30 ),
-			'next_run' => $pilot->next_run(),
-			'msg'      => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
-			'err'      => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
+			'config'      => $pilot->get_config(),
+			'profiles'    => $profiles->get_all(),
+			'queue'       => $pilot->get_queue(),
+			'log'         => $pilot->get_log( 30 ),
+			'next_run'    => $pilot->next_run(),
+			'diagnostics' => $diagnostics,
+			'msg'         => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+			'err'         => isset( $_GET['rwai_err'] ) ? wp_unslash( $_GET['rwai_err'] ) : '',
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/autopilot.php';
 	}

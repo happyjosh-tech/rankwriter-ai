@@ -18,6 +18,22 @@ class RankWriter_AI {
 		$autopilot = new RankWriter_AI_Autopilot();
 		$autopilot->register_hooks();
 
+		// Async generation queue: manual "Generate Article" requests get
+		// enqueued and run inside a non-blocking WP-Cron loopback so the
+		// user's browser doesn't time out behind nginx (504 Gateway
+		// Time-out) while Claude is still writing.
+		if ( class_exists( 'RankWriter_AI_Generation_Queue' ) ) {
+			( new RankWriter_AI_Generation_Queue() )->register_hooks();
+		}
+
+		// Scheduled-post recovery: catches WP-Cron "missed schedule"
+		// failures so any post stuck at status=future past its date gets
+		// published on the next page load, and stalled RWAI cron hooks
+		// get kicked so Autopilot ticks fire even on low-traffic sites.
+		if ( class_exists( 'RankWriter_AI_Schedule_Recovery' ) ) {
+			( new RankWriter_AI_Schedule_Recovery() )->register_hooks();
+		}
+
 		$schema_injector = new RankWriter_AI_Schema_Injector();
 		$schema_injector->register_hooks();
 
