@@ -68,8 +68,15 @@ class RankWriter_AI_Schedule_Recovery {
 		$published = $this->publish_missed_scheduled_posts();
 		$kicked    = $this->kick_missed_crons();
 
-		if ( $published > 0 || $kicked > 0 ) {
-			$this->log( sprintf( 'Recovery: published %d missed post(s), kicked %d stalled cron hook(s).', $published, $kicked ) );
+		// Auto-recover generation jobs stuck at "running" past the stale
+		// window — typically a worker that PHP-FPM killed mid-generation.
+		$stale_jobs = 0;
+		if ( class_exists( 'RankWriter_AI_Generation_Queue' ) ) {
+			$stale_jobs = ( new RankWriter_AI_Generation_Queue() )->recover_stale_running_jobs();
+		}
+
+		if ( $published > 0 || $kicked > 0 || $stale_jobs > 0 ) {
+			$this->log( sprintf( 'Recovery: published %d missed post(s), kicked %d stalled cron hook(s), reset %d stale generation job(s).', $published, $kicked, $stale_jobs ) );
 		}
 	}
 

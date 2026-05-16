@@ -90,6 +90,7 @@ class RankWriter_AI_Content_Generator {
 		$country = '' !== $args['country_override'] ? sanitize_text_field( $args['country_override'] ) : ( ! empty( $profile['target_country'] ) ? $profile['target_country'] : 'US' );
 		$country_code = $this->country_code( $country );
 
+		do_action( 'rwai_generation_step', 'Keyword research (Google Suggest + Trends + competitors)' );
 		$competitors = $this->competitor_domains();
 		$research    = $this->research->discover( $topic, $country_code, $competitors );
 		if ( is_wp_error( $research ) ) {
@@ -106,6 +107,7 @@ class RankWriter_AI_Content_Generator {
 		// Detect search intent on the topic. Heuristic-first; falls back to
 		// Claude for tiebreaking on ambiguous queries. Drives article shape,
 		// CTA placement, monetization emphasis, headline style, and schema.
+		do_action( 'rwai_generation_step', 'Search intent detection (heuristic + Claude tiebreak)' );
 		$intent_detector = new RankWriter_AI_Intent_Detector();
 		$intent          = $intent_detector->detect_with_ai( $topic );
 		$intent_block    = RankWriter_AI_Intent_Detector::to_prompt_block( $intent );
@@ -114,6 +116,7 @@ class RankWriter_AI_Content_Generator {
 		$system_prompt = $this->build_system_prompt( $profile_id, $word_count, $research, $link_pool, $cluster_context, $intent_block, (string) $args['pse_context'], $lang_block, (int) $cat_term_id );
 		$user_prompt   = $this->build_user_prompt( $profile, $topic, $word_count, $args['extra_context'], $research );
 
+		do_action( 'rwai_generation_step', 'Main Claude article generation (60-120s — the slow one)' );
 		$text = $this->client->send(
 			$system_prompt,
 			array(
@@ -128,6 +131,7 @@ class RankWriter_AI_Content_Generator {
 			return $text;
 		}
 
+		do_action( 'rwai_generation_step', 'Parsing Claude response into title + body + meta' );
 		$parsed = $this->parse_response( $text, $topic );
 
 		// 1a) Humanize pass — opt-in via Settings. Second Claude call that
@@ -135,6 +139,7 @@ class RankWriter_AI_Content_Generator {
 		// numbers, HTML structure, and internal-link URLs. Delegates to
 		// the AI Humanization Engine (strength + tone + persona + readability).
 		if ( $this->should_humanize() && class_exists( 'RankWriter_AI_Humanizer' ) ) {
+			do_action( 'rwai_generation_step', 'Humanizer Claude pass (60-120s — second slow call; toggle OFF in Settings to skip)' );
 			$humanizer = new RankWriter_AI_Humanizer();
 			$opts      = RankWriter_AI_Humanizer::default_options();
 			$opts['topic']        = $topic;
@@ -163,6 +168,7 @@ class RankWriter_AI_Content_Generator {
 			$status = 'draft';
 		}
 
+		do_action( 'rwai_generation_step', 'Saving draft post to WordPress' );
 		// wp_insert_post expects SLASHED values and unslashes internally.
 		// Without wp_slash() here, any legitimate "\" in the body (e.g. a
 		// stray "\n" Claude wrote inside content_html) would have its
@@ -205,6 +211,7 @@ class RankWriter_AI_Content_Generator {
 		$this->compliance->save_report( $post_id, $report );
 
 		// 4) Source a featured image biased by the category profile's image_style.
+		do_action( 'rwai_generation_step', 'Sourcing featured image' );
 		$image_style = ! empty( $profile['image_style'] ) ? $profile['image_style'] : (string) RankWriter_AI_Helpers::get_setting( 'default_image_style', 'realistic' );
 		$image_query = $parsed['focus_keyword'] ? $parsed['focus_keyword'] : $topic;
 		$this->images->source_and_attach( $post_id, $image_query, $image_style );
@@ -281,14 +288,17 @@ class RankWriter_AI_Content_Generator {
 		// Claude validation pass to keep generation cheap — the user can
 		// run the deep review manually from the Fact Checker page.
 		if ( class_exists( 'RankWriter_AI_Fact_Checker' ) ) {
+			do_action( 'rwai_generation_step', 'Fact-checking heuristics' );
 			( new RankWriter_AI_Fact_Checker() )->check_post( (int) $post_id, false );
 		}
 
 		// Risk + AdSense compliance scan on every generated post.
 		if ( class_exists( 'RankWriter_AI_Risk_Detector' ) ) {
+			do_action( 'rwai_generation_step', 'Risk + AdSense compliance scan' );
 			( new RankWriter_AI_Risk_Detector() )->scan_post( (int) $post_id );
 		}
 
+		do_action( 'rwai_generation_step', 'Done' );
 		return (int) $post_id;
 	}
 
@@ -749,7 +759,15 @@ RULES;
 	}
 
 	private function should_humanize() {
-		return (int) RankWriter_AI_Helpers::get_setting( 'humanize_pass', 1 ) === 1;
+		// Default to OFF (0). The humanizer is a second Claude API call
+		// that adds 60-120s to the critical path — on hosts with strict
+		// PHP-FPM timeouts (most managed shared hosts) it's the single
+		// step most likely to get killed mid-pipeline, leaving the user
+		// with a stuck "running" job and burned API credit but no saved
+		// post. The voice rules baked into the main generation prompt
+		// already strip most AI tells; opt in to the second pass via
+		// Settings → Humanize pass only if your host has 120s+ timeouts.
+		return (int) RankWriter_AI_Helpers::get_setting( 'humanize_pass', 0 ) === 1;
 	}
 
 	/**

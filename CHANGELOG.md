@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-05-16
+
+### Fixed — generation jobs no longer stuck at "running" forever
+
+The 1.2.3 queue treated `running` as a permanent skip, so when a worker process actually died mid-generation (PHP-FPM killing the worker at 60s, host killing the loopback HTTP request, or any other crash) the job stayed at "running" indefinitely. Every retry attempt saw "running" and refused to re-run it. Compounding bug: the generation pipeline made **three** Claude API calls in sequence (intent detection → main article → humanizer) plus image sourcing + fact-checker + risk scan, easily 200-300s end-to-end — too long for the PHP-FPM windows most managed shared hosts allow.
+
+### Changed
+
+- **Stale "running" jobs now auto-retry.** `Generation_Queue::run_job()` distinguishes terminal states (`done` / `failed` — never re-run) from `running` jobs whose `started_at_ts` is older than 10 minutes (presumed-dead worker — re-run). New `attempts` counter caps retries at 3 so a genuinely broken job doesn't loop forever; after 3 attempts the job is marked failed with a clear "your host's PHP timeout is too short" message and a pointer to disable Humanize.
+- **Stale-job recovery sweep.** `Schedule_Recovery` now also scans the generation queue every minute and resets any job stuck at `running` past the stale window. Result: the 24-hour-stuck job you're staring at right now will auto-recover on the next admin page load after this update.
+- **Per-step progress visibility.** `Content_Generator::generate()` fires `rwai_generation_step` at every major stage (keyword research, intent detection, main Claude call, humanizer pass, post insert, image sourcing, fact-checker, risk scan). The queue listens and records the last step on each job, so the recent-generations panel now shows exactly WHERE a job is right now — and exactly where the previous worker died if it crashed.
+- **"Reset & retry" button on every failed or stale-running job.** Lets the user unstick a job manually without waiting for the 10-minute auto-recovery window.
+- **Humanize pass defaults to OFF on new installs.** The humanizer is a second Claude call adding 60-120s to the critical path — on hosts with strict PHP-FPM timeouts (most managed shared hosts) it's the single step most likely to get killed mid-pipeline. The voice rules baked into the main generation prompt already strip most AI tells; opt back in via Settings → Humanize pass only if your host has 120s+ timeouts.
+
+### Why this means manual generation + autopilot finally work on cheap hosts
+
+The critical path is now: keyword research (10-20s) → intent detection (5-15s) → main Claude call (60-90s) → post insert (fast). Image sourcing + fact-checker + risk scan run after the post is already saved as a draft, so even if PHP-FPM kills them, the post exists. Total before-save: 75-125s, fits in most hosts' PHP windows.
+
 ## [1.2.4] - 2026-05-14
 
 ### Added — Autopilot diagnostics + manual "Run now"

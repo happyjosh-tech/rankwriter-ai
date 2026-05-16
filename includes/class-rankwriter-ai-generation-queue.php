@@ -21,12 +21,66 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class RankWriter_AI_Generation_Queue {
 
-	const CRON_HOOK   = 'rwai_generate_async';
-	const JOBS_OPTION = 'rwai_generation_jobs';
-	const MAX_JOBS    = 50;
+	const CRON_HOOK        = 'rwai_generate_async';
+	const JOBS_OPTION      = 'rwai_generation_jobs';
+	const MAX_JOBS         = 50;
+	const STALE_AFTER_SECS = 600;  // 10 minutes — anything still "running" past this is presumed dead
+	const MAX_ATTEMPTS     = 3;
 
 	public function register_hooks() {
 		add_action( self::CRON_HOOK, array( $this, 'run_job' ), 10, 1 );
+
+		// Listen for per-step progress hooks emitted from the generator so
+		// the recent-jobs panel shows WHERE a long-running job is right
+		// now (e.g. "keyword research" vs "main Claude call" vs
+		// "humanizer"). If a worker dies, the last logged step tells us
+		// exactly which stage was timing out.
+		add_action( 'rwai_generation_step', array( $this, 'record_step' ), 10, 1 );
+
+		// Manual "Reset & retry" button on the recent-jobs panel.
+		add_action( 'admin_post_rwai_reset_generation_job', array( $this, 'handle_manual_reset' ) );
+	}
+
+	/**
+	 * Admin-post action: reset a single job to "queued" and re-fire it.
+	 * Used by the "Reset & retry" button on the recent-jobs panel so the
+	 * user can unstick a job whose worker died without waiting for the
+	 * 10-minute auto-recovery window.
+	 */
+	public function handle_manual_reset() {
+		if ( ! current_user_can( 'edit_posts' ) ) {
+			wp_die( esc_html__( 'Insufficient permissions.', 'rankwriter-ai' ) );
+		}
+		check_admin_referer( 'rwai_reset_generation_job' );
+
+		$job_id = isset( $_POST['job_id'] ) ? sanitize_text_field( wp_unslash( $_POST['job_id'] ) ) : '';
+		if ( '' === $job_id ) {
+			wp_die( esc_html__( 'Missing job ID.', 'rankwriter-ai' ) );
+		}
+
+		$jobs = $this->get_all_jobs();
+		if ( isset( $jobs[ $job_id ] ) ) {
+			$jobs[ $job_id ]['status']        = 'queued';
+			$jobs[ $job_id ]['error']         = '';
+			$jobs[ $job_id ]['started_at']    = '';
+			$jobs[ $job_id ]['started_at_ts'] = 0;
+			$jobs[ $job_id ]['ended_at']      = '';
+			// Reset attempts so the user gets a fresh MAX_ATTEMPTS window.
+			$jobs[ $job_id ]['attempts']      = 0;
+			$jobs[ $job_id ]['progress']      = 'Manually reset';
+			$jobs[ $job_id ]['progress_at']   = current_time( 'mysql' );
+			update_option( self::JOBS_OPTION, $jobs, false );
+
+			wp_schedule_single_event( time() + 1, self::CRON_HOOK, array( $job_id ) );
+			if ( function_exists( 'spawn_cron' ) ) {
+				spawn_cron();
+			}
+		}
+
+		$redirect = wp_get_referer() ?: admin_url( 'admin.php?page=rankwriter-ai-generate' );
+		$redirect = add_query_arg( array( 'rwai_msg' => 'generate-reset', 'job' => rawurlencode( $job_id ) ), $redirect );
+		wp_safe_redirect( $redirect );
+		exit;
 	}
 
 	/**
@@ -39,16 +93,20 @@ class RankWriter_AI_Generation_Queue {
 		$job_id = 'rwai_' . wp_generate_password( 12, false, false );
 
 		$job = array(
-			'id'         => $job_id,
-			'args'       => $args,
-			'status'     => 'queued',
-			'post_id'    => 0,
-			'error'      => '',
-			'queued_at'  => current_time( 'mysql' ),
-			'started_at' => '',
-			'ended_at'   => '',
-			'topic'      => isset( $args['topic'] ) ? (string) $args['topic'] : '',
-			'user_id'    => get_current_user_id(),
+			'id'              => $job_id,
+			'args'            => $args,
+			'status'          => 'queued',
+			'post_id'         => 0,
+			'error'           => '',
+			'queued_at'       => current_time( 'mysql' ),
+			'started_at'      => '',
+			'ended_at'        => '',
+			'topic'           => isset( $args['topic'] ) ? (string) $args['topic'] : '',
+			'user_id'         => get_current_user_id(),
+			'attempts'        => 0,
+			'progress'        => '',
+			'progress_at'     => '',
+			'started_at_ts'   => 0,  // unix timestamp — used to detect stale "running" jobs
 		);
 
 		$jobs = $this->get_all_jobs();
@@ -76,6 +134,16 @@ class RankWriter_AI_Generation_Queue {
 	 * Cron handler. Runs ONE job to completion. The cron loopback request
 	 * is the long-running one, but it's a non-blocking background request
 	 * so the user's HTTP timeout no longer applies.
+	 *
+	 * Resilience contract:
+	 *   - "done" / "failed" jobs are never re-run (terminal states).
+	 *   - "running" jobs are re-run if started_at_ts is older than
+	 *     STALE_AFTER_SECS — assumption is the previous worker process
+	 *     was killed by PHP-FPM / nginx without a chance to mark the
+	 *     job terminal. Without this, a job stuck at "running" because
+	 *     its first worker died would never retry.
+	 *   - attempts is incremented per try; after MAX_ATTEMPTS the job is
+	 *     marked failed.
 	 */
 	public function run_job( $job_id ) {
 		$jobs = $this->get_all_jobs();
@@ -84,8 +152,28 @@ class RankWriter_AI_Generation_Queue {
 		}
 		$job = $jobs[ $job_id ];
 
-		// Idempotency: if already finished or already running, skip.
-		if ( in_array( $job['status'], array( 'done', 'failed', 'running' ), true ) ) {
+		// Terminal states — never re-run.
+		if ( in_array( $job['status'], array( 'done', 'failed' ), true ) ) {
+			return;
+		}
+
+		// "running" → only re-run if it's stale (previous worker died).
+		if ( 'running' === $job['status'] ) {
+			$started_ts = (int) ( $job['started_at_ts'] ?? 0 );
+			if ( $started_ts > 0 && ( time() - $started_ts ) < self::STALE_AFTER_SECS ) {
+				return; // Another worker is genuinely processing this right now.
+			}
+			// Stale — record the death and proceed.
+			$job['progress'] = sprintf( 'Previous worker died at: %s (auto-retry)', (string) ( $job['progress'] ?: 'unknown step' ) );
+		}
+
+		$attempts = (int) ( $job['attempts'] ?? 0 );
+		if ( $attempts >= self::MAX_ATTEMPTS ) {
+			$job['status']   = 'failed';
+			$job['error']    = sprintf( __( 'Failed after %d attempts — last known step: %s. The generation pipeline is likely exceeding your host\'s PHP timeout. Try toggling "Humanize pass" OFF in Settings to shorten the critical path.', 'rankwriter-ai' ), $attempts, (string) ( $job['progress'] ?: 'unknown' ) );
+			$job['ended_at'] = current_time( 'mysql' );
+			$jobs[ $job_id ] = $job;
+			update_option( self::JOBS_OPTION, $jobs, false );
 			return;
 		}
 
@@ -95,10 +183,17 @@ class RankWriter_AI_Generation_Queue {
 		@set_time_limit( 600 );
 		@ignore_user_abort( true );
 
-		$job['status']     = 'running';
-		$job['started_at'] = current_time( 'mysql' );
-		$jobs[ $job_id ]   = $job;
+		$job['status']        = 'running';
+		$job['started_at']    = current_time( 'mysql' );
+		$job['started_at_ts'] = time();
+		$job['attempts']      = $attempts + 1;
+		$jobs[ $job_id ]      = $job;
 		update_option( self::JOBS_OPTION, $jobs, false );
+
+		// Track which job the rwai_generation_step hook should record
+		// progress against. Set via class state so the static callback
+		// path inside record_step() knows which job to update.
+		$GLOBALS['rwai_active_job_id'] = $job_id;
 
 		$gen     = new RankWriter_AI_Content_Generator();
 		$args    = is_array( $job['args'] ) ? $job['args'] : array();
@@ -110,6 +205,8 @@ class RankWriter_AI_Generation_Queue {
 			$args['author_id'] = (int) $job['user_id'];
 		}
 		$post_id = $gen->generate( $args );
+
+		unset( $GLOBALS['rwai_active_job_id'] );
 
 		// Re-read jobs to avoid losing updates if the option changed
 		// while we were running.
@@ -130,6 +227,84 @@ class RankWriter_AI_Generation_Queue {
 
 		$jobs[ $job_id ] = $job;
 		update_option( self::JOBS_OPTION, $jobs, false );
+	}
+
+	/**
+	 * Hooked into `rwai_generation_step` (fired from Content_Generator)
+	 * to update the job's per-step progress so a stuck job tells us
+	 * exactly which stage it's on right now.
+	 */
+	public function record_step( $step ) {
+		$job_id = isset( $GLOBALS['rwai_active_job_id'] ) ? (string) $GLOBALS['rwai_active_job_id'] : '';
+		if ( '' === $job_id ) {
+			return;
+		}
+		$jobs = $this->get_all_jobs();
+		if ( ! isset( $jobs[ $job_id ] ) ) {
+			return;
+		}
+		$jobs[ $job_id ]['progress']    = (string) $step;
+		$jobs[ $job_id ]['progress_at'] = current_time( 'mysql' );
+		update_option( self::JOBS_OPTION, $jobs, false );
+	}
+
+	/**
+	 * Find every job stuck at "running" whose started_at_ts is older
+	 * than STALE_AFTER_SECS, reset it to "queued", and re-fire the cron.
+	 * Called from the schedule-recovery sweep so stuck jobs self-heal
+	 * on the next admin page load instead of sitting forever.
+	 *
+	 * @return int  Number of jobs reset.
+	 */
+	public function recover_stale_running_jobs() {
+		$jobs    = $this->get_all_jobs();
+		$now     = time();
+		$resets  = 0;
+		$changed = false;
+
+		foreach ( $jobs as $id => &$job ) {
+			if ( 'running' !== ( $job['status'] ?? '' ) ) {
+				continue;
+			}
+			$started_ts = (int) ( $job['started_at_ts'] ?? 0 );
+			if ( 0 === $started_ts ) {
+				// Job started before this field existed — best-effort: parse started_at.
+				if ( ! empty( $job['started_at'] ) ) {
+					$started_ts = (int) strtotime( (string) $job['started_at'] );
+				}
+			}
+			if ( $started_ts > 0 && ( $now - $started_ts ) < self::STALE_AFTER_SECS ) {
+				continue; // Still inside the live window.
+			}
+
+			$last_step = (string) ( $job['progress'] ?: 'unknown step' );
+			$attempts  = (int) ( $job['attempts'] ?? 0 );
+
+			if ( $attempts >= self::MAX_ATTEMPTS ) {
+				$job['status']   = 'failed';
+				$job['error']    = sprintf( __( 'Worker died %d times in a row, last step: %s. Likely cause: your host\'s PHP-FPM is killing the worker mid-generation. Toggle Humanize pass OFF in Settings to halve the critical path.', 'rankwriter-ai' ), $attempts, $last_step );
+				$job['ended_at'] = current_time( 'mysql' );
+				$changed = true;
+				continue;
+			}
+
+			$job['status']   = 'queued';
+			$job['progress'] = 'Auto-reset after stale "running" — last step: ' . $last_step;
+			$job['started_at_ts'] = 0;
+			$changed = true;
+			$resets++;
+
+			wp_schedule_single_event( time() + 1, self::CRON_HOOK, array( $id ) );
+		}
+		unset( $job );
+
+		if ( $changed ) {
+			update_option( self::JOBS_OPTION, $jobs, false );
+			if ( $resets > 0 && function_exists( 'spawn_cron' ) ) {
+				spawn_cron();
+			}
+		}
+		return $resets;
 	}
 
 	public function get_job( $job_id ) {

@@ -62,6 +62,8 @@ if ( $is_pending ) {
 
 	<?php if ( 'generate-error' === $msg ) : ?>
 		<div class="notice notice-error is-dismissible"><p><?php echo esc_html( '' !== $err ? $err : __( 'Generation failed.', 'rankwriter-ai' ) ); ?></p></div>
+	<?php elseif ( 'generate-reset' === $msg ) : ?>
+		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Job reset and re-queued. It will run again on the next background worker tick.', 'rankwriter-ai' ); ?></p></div>
 	<?php endif; ?>
 
 	<?php if ( is_array( $current_job ) ) :
@@ -184,19 +186,26 @@ if ( $is_pending ) {
 				<tr>
 					<th><?php esc_html_e( 'Topic', 'rankwriter-ai' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Last step', 'rankwriter-ai' ); ?></th>
 					<th><?php esc_html_e( 'Queued', 'rankwriter-ai' ); ?></th>
 					<th><?php esc_html_e( 'Finished', 'rankwriter-ai' ); ?></th>
-					<th><?php esc_html_e( 'Result', 'rankwriter-ai' ); ?></th>
+					<th><?php esc_html_e( 'Action / Result', 'rankwriter-ai' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php foreach ( $recent_jobs as $job ) :
-					$status   = (string) ( $job['status']   ?? '' );
-					$topic    = (string) ( $job['topic']    ?? '' );
-					$queued   = (string) ( $job['queued_at'] ?? '' );
-					$ended    = (string) ( $job['ended_at'] ?? '' );
-					$post_id  = (int)    ( $job['post_id']  ?? 0 );
-					$error    = (string) ( $job['error']    ?? '' );
+					$status     = (string) ( $job['status']      ?? '' );
+					$topic      = (string) ( $job['topic']       ?? '' );
+					$queued     = (string) ( $job['queued_at']   ?? '' );
+					$ended      = (string) ( $job['ended_at']    ?? '' );
+					$post_id    = (int)    ( $job['post_id']     ?? 0 );
+					$error      = (string) ( $job['error']       ?? '' );
+					$progress   = (string) ( $job['progress']    ?? '' );
+					$attempts   = (int)    ( $job['attempts']    ?? 0 );
+					$started_ts = (int)    ( $job['started_at_ts'] ?? 0 );
+					$job_id     = (string) ( $job['id']          ?? '' );
+
+					$is_stale_running = ( 'running' === $status && $started_ts > 0 && ( time() - $started_ts ) > 600 );
 
 					$badge_colors = array(
 						'queued'  => '#dba617',
@@ -207,19 +216,38 @@ if ( $is_pending ) {
 					$badge_color = $badge_colors[ $status ] ?? '#646970';
 					?>
 					<tr>
-						<td><?php echo esc_html( $topic ); ?></td>
+						<td><?php echo esc_html( $topic ); ?>
+							<?php if ( $attempts > 1 ) : ?>
+								<br><small class="rwai-muted"><?php
+								/* translators: %d: attempt count */
+								printf( esc_html__( 'attempt %d', 'rankwriter-ai' ), (int) $attempts );
+								?></small>
+							<?php endif; ?>
+						</td>
 						<td>
 							<span style="display:inline-block;padding:2px 8px;border-radius:10px;background:<?php echo esc_attr( $badge_color ); ?>;color:#fff;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">
 								<?php echo esc_html( $status ); ?>
 							</span>
+							<?php if ( $is_stale_running ) : ?>
+								<br><small style="color:#d63638;">⚠ <?php esc_html_e( 'worker likely died', 'rankwriter-ai' ); ?></small>
+							<?php endif; ?>
 						</td>
+						<td><small><?php echo esc_html( $progress ?: '—' ); ?></small></td>
 						<td><?php echo esc_html( $queued ); ?></td>
 						<td><?php echo esc_html( $ended ); ?></td>
 						<td>
 							<?php if ( 'done' === $status && $post_id ) : ?>
 								<a href="<?php echo esc_url( add_query_arg( array( 'post' => $post_id, 'action' => 'edit' ), admin_url( 'post.php' ) ) ); ?>"><?php esc_html_e( 'Open post', 'rankwriter-ai' ); ?></a>
-							<?php elseif ( 'failed' === $status ) : ?>
-								<span style="color:#d63638;"><?php echo esc_html( $error ); ?></span>
+							<?php elseif ( 'failed' === $status || $is_stale_running ) : ?>
+								<?php if ( $error ) : ?>
+									<div style="color:#d63638;margin-bottom:6px;"><small><?php echo esc_html( $error ); ?></small></div>
+								<?php endif; ?>
+								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+									<input type="hidden" name="action" value="rwai_reset_generation_job" />
+									<input type="hidden" name="job_id" value="<?php echo esc_attr( $job_id ); ?>" />
+									<?php wp_nonce_field( 'rwai_reset_generation_job' ); ?>
+									<button type="submit" class="button button-small"><?php esc_html_e( 'Reset & retry', 'rankwriter-ai' ); ?></button>
+								</form>
 							<?php else : ?>
 								—
 							<?php endif; ?>
