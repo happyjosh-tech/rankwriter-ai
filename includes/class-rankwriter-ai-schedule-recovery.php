@@ -131,11 +131,21 @@ class RankWriter_AI_Schedule_Recovery {
 	}
 
 	/**
-	 * For each RankWriter cron hook, if next_scheduled is in the past,
-	 * spawn_cron() so it runs on this request. Doesn't reschedule —
-	 * recurring events already do that themselves on each fire.
+	 * Count RankWriter cron hooks whose next_scheduled time is in the
+	 * past. Used for diagnostics + to tell the browser-side cron
+	 * trigger whether it has anything to do.
 	 *
-	 * @return int  Count of stalled hooks we kicked.
+	 * NOTE: this method used to call WordPress's spawn_cron() to kick
+	 * stalled events server-side. That worked on healthy hosts but on
+	 * hosts that block WordPress's outbound HTTP back to its own public
+	 * URL (Cloudflare front, restrictive firewalls, some shared hosts)
+	 * spawn_cron() would hang at the TCP layer for the full PHP-FPM
+	 * timeout — even with blocking=>false — and produce nginx 504s on
+	 * every page load that touched this code path. We now trigger
+	 * WP-Cron from the user's browser via admin_footer instead. See
+	 * RankWriter_AI_Browser_Cron.
+	 *
+	 * @return int  Count of overdue hooks.
 	 */
 	public function kick_missed_crons() {
 		$kicked = 0;
@@ -145,9 +155,6 @@ class RankWriter_AI_Schedule_Recovery {
 			if ( $next && $next <= $now ) {
 				$kicked++;
 			}
-		}
-		if ( $kicked > 0 && function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
 		}
 		return $kicked;
 	}

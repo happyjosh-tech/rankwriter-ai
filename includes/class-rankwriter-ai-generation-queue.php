@@ -72,9 +72,10 @@ class RankWriter_AI_Generation_Queue {
 			update_option( self::JOBS_OPTION, $jobs, false );
 
 			wp_schedule_single_event( time() + 1, self::CRON_HOOK, array( $job_id ) );
-			if ( function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
+			// Browser-cron trigger (admin_footer in RankWriter_AI_Browser_Cron)
+			// will fire wp-cron.php from the user's tab. We deliberately do
+			// NOT call spawn_cron() server-side — see schedule-recovery
+			// notes for why that hangs on some hosts.
 		}
 
 		$redirect = wp_get_referer() ?: admin_url( 'admin.php?page=rankwriter-ai-generate' );
@@ -121,11 +122,15 @@ class RankWriter_AI_Generation_Queue {
 		// time to detect the event as due.
 		wp_schedule_single_event( time() + 1, self::CRON_HOOK, array( $job_id ) );
 
-		// Fire the cron loopback now — non-blocking — so we don't wait for
-		// the next visitor to wake WP-Cron.
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
-		}
+		// WP-Cron will fire this event the next time wp-cron.php is hit.
+		// We used to call spawn_cron() here to trigger an immediate
+		// server-side loopback, but on hosts that block WordPress's
+		// outbound HTTP to its own public URL (Cloudflare front, locked-
+		// down firewalls) that hangs at the TCP layer for the full PHP
+		// timeout and 504s the admin redirect. RankWriter_AI_Browser_Cron
+		// triggers wp-cron.php from the user's browser instead, which
+		// works on every host because the browser → server direction is
+		// never blocked.
 
 		return $job_id;
 	}
@@ -300,9 +305,9 @@ class RankWriter_AI_Generation_Queue {
 
 		if ( $changed ) {
 			update_option( self::JOBS_OPTION, $jobs, false );
-			if ( $resets > 0 && function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
+			// Re-firing happens via browser-side cron (admin_footer hook in
+			// RankWriter_AI_Browser_Cron) — no server-side spawn_cron call
+			// to avoid the loopback-HTTP hang on locked-down hosts.
 		}
 		return $resets;
 	}
@@ -356,9 +361,8 @@ class RankWriter_AI_Generation_Queue {
 		update_option( self::JOBS_OPTION, $jobs, false );
 
 		wp_schedule_single_event( time() + 1, self::CRON_HOOK, array( $job_id ) );
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
-		}
+		// Browser-cron trigger (see RankWriter_AI_Browser_Cron) fires
+		// wp-cron.php from the user's tab; no server-side spawn_cron.
 		return true;
 	}
 }

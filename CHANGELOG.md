@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-05-17
+
+### Fixed — 504 Gateway Time-out on Autopilot save + Run-now
+
+The recovery sweep added in 1.2.2 called WordPress's `spawn_cron()` on every admin page load to kick stalled cron events server-side. On most hosts that returns in <50ms because of `blocking => false`. But on hosts where the firewall/CDN/load balancer blocks WordPress from connecting back to its own public URL (Cloudflare-fronted sites, some shared hosts, sites behind restrictive VPCs), the underlying TCP `connect()` hangs at the OS layer for the full PHP-FPM timeout — even though WordPress asked for non-blocking — which produced nginx 504s on the Autopilot page (and any other page that triggered the sweep).
+
+### Changed — Browser-side WP-Cron trigger replaces server-side spawn_cron
+
+- **New `RankWriter_AI_Browser_Cron`.** Injects a tiny `<script>` into the admin footer that fires `wp-cron.php` from the user's tab via XHR. The browser → server connection always works (it's the same path the user used to load the admin page in the first place), so wp-cron.php runs reliably regardless of the host's server-to-server loopback health.
+- **All `spawn_cron()` calls removed from the plugin.** Recovery sweep, generation enqueue, autopilot run-now, manual job reset, stale-job recovery — none of them call it anymore. The browser-side trigger picks up the work on the next admin page load (typically under a second after the redirect).
+- **Trigger only fires when there's pending work.** The admin_footer snippet first checks: any overdue RWAI cron hook? any post stuck at `future` past its date? any queued / stale-running generation job? If none, no XHR is emitted — saves a request per admin page when the system is idle.
+- **Trade-off surfaced honestly.** Browser-side cron fires only when an admin user has a wp-admin tab open. For genuine 3-AM autopilot runs with no one logged in, you still need natural visitor traffic hitting any frontend page OR a real system cron pointing at `wp-cron.php` every minute. We'd already documented the latter in the Autopilot diagnostics panel.
+
+### Notes for users still missing featured images
+
+Featured image sourcing uses the Pexels API or Unsplash Access Key — both require a free API key. With neither configured, the sourcer silently skips (rather than failing the whole generation). Add a Pexels key at https://www.pexels.com/api/ → paste into RankWriter AI → Settings → Image API keys to enable featured images.
+
 ## [1.2.5] - 2026-05-16
 
 ### Fixed — generation jobs no longer stuck at "running" forever

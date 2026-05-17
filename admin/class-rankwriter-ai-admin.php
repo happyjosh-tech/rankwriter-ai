@@ -1186,10 +1186,13 @@ class RankWriter_AI_Admin {
 	}
 
 	/**
-	 * Schedule an immediate autopilot tick via the dedicated run-now hook
-	 * and kick spawn_cron() so it fires in a non-blocking background
-	 * request — keeps the user's browser from sitting on a 504 while
-	 * the generator does its 90-180s of work.
+	 * Schedule an immediate autopilot tick via the dedicated run-now hook.
+	 * The actual generator runs inside the next wp-cron.php hit, which
+	 * the admin_footer browser-cron trigger in RankWriter_AI_Browser_Cron
+	 * will fire from the user's tab within a second of the redirect
+	 * landing — keeping the user's browser off the long-running pipeline
+	 * AND avoiding server-side spawn_cron() (which hangs on hosts that
+	 * block WordPress's outbound HTTP back to its own public URL).
 	 */
 	private function handle_run_autopilot_now() {
 		check_admin_referer( self::AUTOPILOT_NONCE );
@@ -1204,9 +1207,6 @@ class RankWriter_AI_Admin {
 		}
 
 		wp_schedule_single_event( time() + 1, RankWriter_AI_Autopilot::CRON_HOOK_NOW );
-		if ( function_exists( 'spawn_cron' ) ) {
-			spawn_cron();
-		}
 
 		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::AUTOPILOT_SLUG, array( 'rwai_msg' => 'autopilot-run-now' ) ) );
 		exit;

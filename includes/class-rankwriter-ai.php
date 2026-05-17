@@ -26,6 +26,14 @@ class RankWriter_AI {
 			( new RankWriter_AI_Generation_Queue() )->register_hooks();
 		}
 
+		// Browser-side WP-Cron trigger: fires wp-cron.php from the
+		// admin user's browser tab when there's overdue work. Replaces
+		// server-side spawn_cron() which hangs at the TCP layer on
+		// hosts that block WordPress's outbound HTTP to its own URL.
+		if ( class_exists( 'RankWriter_AI_Browser_Cron' ) ) {
+			( new RankWriter_AI_Browser_Cron() )->register_hooks();
+		}
+
 		// Scheduled-post recovery: catches WP-Cron "missed schedule"
 		// failures so any post stuck at status=future past its date gets
 		// published on the next page load, and stalled RWAI cron hooks
