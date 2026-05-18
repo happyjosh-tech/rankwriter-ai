@@ -29,6 +29,7 @@ class RankWriter_AI_Admin {
 	const HEALER_SLUG     = 'rankwriter-ai-healer';
 	const SPEED_SLUG      = 'rankwriter-ai-speed';
 	const LEGAL_SLUG      = 'rankwriter-ai-legal';
+	const ADS_SLUG        = 'rankwriter-ai-ads';
 	const SETTINGS_SLUG   = 'rankwriter-ai-settings';
 
 	const SETTINGS_NONCE  = 'rwai_save_settings';
@@ -57,6 +58,7 @@ class RankWriter_AI_Admin {
 	const RISK_NONCE      = 'rwai_risk';
 	const HEALER_NONCE    = 'rwai_healer';
 	const SPEED_NONCE     = 'rwai_speed';
+	const ADS_NONCE       = 'rwai_ads';
 
 	public function register_hooks() {
 		add_action( 'admin_menu', array( $this, 'register_menus' ) );
@@ -293,6 +295,14 @@ class RankWriter_AI_Admin {
 		);
 		add_submenu_page(
 			self::MENU_SLUG,
+			__( 'Ads', 'rankwriter-ai' ),
+			__( 'Ads', 'rankwriter-ai' ),
+			'manage_options',
+			self::ADS_SLUG,
+			array( $this, 'render_ads' )
+		);
+		add_submenu_page(
+			self::MENU_SLUG,
 			__( 'Settings', 'rankwriter-ai' ),
 			__( 'Settings', 'rankwriter-ai' ),
 			'manage_options',
@@ -388,6 +398,9 @@ class RankWriter_AI_Admin {
 				break;
 			case 'save_autopilot':
 				$this->handle_save_autopilot();
+				break;
+			case 'save_ads':
+				$this->handle_save_ads();
 				break;
 			case 'refill_autopilot_queue':
 				$this->handle_refill_autopilot();
@@ -1183,6 +1196,49 @@ class RankWriter_AI_Admin {
 		$pilot->clear_queue();
 		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::AUTOPILOT_SLUG, array( 'rwai_msg' => 'autopilot-cleared' ) ) );
 		exit;
+	}
+
+	/**
+	 * Save all 16 ad blocks + global ads settings (Auto Ads pub-id,
+	 * ads.txt content, master enable) in one POST. Form posts the
+	 * entire blocks array — we sanitize each block via the DB layer's
+	 * sanitize_block(), then write everything back as a single
+	 * `rwai_ads_blocks` option for a single DB write.
+	 */
+	private function handle_save_ads() {
+		check_admin_referer( self::ADS_NONCE );
+
+		// Global settings.
+		$global_patch = array(
+			'master_enabled'    => isset( $_POST['master_enabled'] ) ? 1 : 0,
+			'auto_ads_enabled'  => isset( $_POST['auto_ads_enabled'] ) ? 1 : 0,
+			'auto_ads_pub_id'   => isset( $_POST['auto_ads_pub_id'] ) ? sanitize_text_field( wp_unslash( $_POST['auto_ads_pub_id'] ) ) : '',
+			'ads_txt_content'   => isset( $_POST['ads_txt_content'] ) ? (string) wp_unslash( $_POST['ads_txt_content'] ) : '',
+			'inject_in_head'    => isset( $_POST['inject_in_head'] ) ? (string) wp_unslash( $_POST['inject_in_head'] ) : '',
+		);
+		RankWriter_AI_Ads_DB::save_settings( $global_patch );
+
+		// Per-block array. The form posts blocks[1][name], blocks[1][code], etc.
+		$blocks_in = isset( $_POST['blocks'] ) && is_array( $_POST['blocks'] ) ? wp_unslash( $_POST['blocks'] ) : array();
+		$normalized = array();
+		for ( $i = 1; $i <= RankWriter_AI_Ads_DB::NUM_BLOCKS; $i++ ) {
+			$normalized[ $i ] = isset( $blocks_in[ $i ] ) && is_array( $blocks_in[ $i ] ) ? $blocks_in[ $i ] : array();
+		}
+		RankWriter_AI_Ads_DB::save_blocks( $normalized );
+
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::ADS_SLUG, array( 'rwai_msg' => 'ads-saved' ) ) );
+		exit;
+	}
+
+	public function render_ads() {
+		if ( ! current_user_can( 'manage_options' ) ) { return; }
+		$data = array(
+			'blocks'   => RankWriter_AI_Ads_DB::get_blocks(),
+			'settings' => RankWriter_AI_Ads_DB::get_settings(),
+			'msg'      => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+			'active'   => isset( $_GET['block'] ) ? max( 1, min( RankWriter_AI_Ads_DB::NUM_BLOCKS, (int) $_GET['block'] ) ) : 1,
+		);
+		require RWAI_PLUGIN_DIR . 'admin/partials/ads.php';
 	}
 
 	/**

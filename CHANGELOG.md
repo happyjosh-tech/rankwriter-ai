@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-18
+
+### Added — Ads module (Ad Inserter clone, no extra plugin needed)
+
+Full-featured ad management built into RankWriter so users don't need to install and maintain a separate ad-management plugin. Inspired by Ad Inserter by Igor Funa.
+
+- **16 ad blocks**, each with its own code editor (HTML / JS / AdSense ins-tags), name, and enable toggle.
+- **Insertion modes per block**: After paragraph N (CSV of paragraph numbers like `3,6,9,12`), Before content, After content, Before/After excerpt, Between posts on archive pages (every Nth post), Manual via shortcode `[rwai_ad block=N]`.
+- **Display conditions**: Posts / Pages / Homepage / Category pages / Tag pages / Search / Archive — per block. Plus CSV-driven include/exclude lists for category IDs, tag IDs, and specific post IDs.
+- **Device targeting**: Show on Desktop / Tablet / Mobile checkboxes. User-agent detection: iPad / Android tablets → tablet; iPhone / Android phones → mobile; everything else → desktop.
+- **Scheduling**: start/end date-time range, time-of-day window (with midnight-wrap support for overnight ads like 22:00 → 06:00), and day-of-week checkboxes.
+- **Alignment**: Default / Left (float) / Right (float) / Center, applied via a single wrapper class.
+- **AdSense Auto Ads**: one toggle + paste your `ca-pub-` ID; the official Google Auto Ads script is emitted in `<head>`.
+- **ads.txt manager**: paste your `ads.txt` content in Settings; the plugin serves it at `your-site.com/ads.txt` (required for AdSense / programmatic verification).
+- **Custom HTML in &lt;head&gt;**: useful for Google Search Console / Bing Webmaster / AdSense site-verification meta tags without editing the theme.
+- **Per-post override**: meta box on every Post / Page editor with a "Disable ALL ads on this post" checkbox and a comma-separated "disable specific blocks" field.
+- **Lazy-loaded inline CSS**: ad alignment styles are emitted in the footer only when at least one ad is being rendered. Zero CSS request when no ads on the page.
+
+Limitations vs. full Ad Inserter (we didn't try to clone the entire 6-year project in one pass): no viewport-based rules, no A/B testing, no AMP-specific blocks, no CSS-sticky ads, no manual position-by-CSS-selector, no GDPR consent integration. These can be added in follow-up versions if needed.
+
+### Architecture
+
+- `RankWriter_AI_Ads_DB`: storage + sanitization (single `rwai_ads_blocks` option for all 16 blocks, single `rwai_ads_settings` option for globals).
+- `RankWriter_AI_Ads_Inserter`: frontend engine. Hooks `the_content` / `the_excerpt` / `wp_head` / `init` (for ads.txt) / `add_meta_boxes` / `save_post`. Splits content by `</p>` boundaries for paragraph-precise insertion. Resets a per-loop counter via `loop_start` / `loop_end` for the between-posts mode.
+- Admin UI at `RankWriter AI → Ads`: tab-based navigator across all 16 blocks, single-form save covering all blocks + global settings in one POST.
+
 ## [1.2.7] - 2026-05-18
 
 ### Fixed — Autopilot page 504 (cause #2)

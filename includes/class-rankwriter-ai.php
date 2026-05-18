@@ -34,6 +34,12 @@ class RankWriter_AI {
 			( new RankWriter_AI_Browser_Cron() )->register_hooks();
 		}
 
+		// Ads module — Ad Inserter clone: 16 blocks, insertion modes,
+		// device targeting, scheduling, AdSense Auto Ads, ads.txt.
+		if ( class_exists( 'RankWriter_AI_Ads_Inserter' ) ) {
+			( new RankWriter_AI_Ads_Inserter() )->register_hooks();
+		}
+
 		// Scheduled-post recovery: catches WP-Cron "missed schedule"
 		// failures so any post stuck at status=future past its date gets
 		// published on the next page load, and stalled RWAI cron hooks
