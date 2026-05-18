@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-05-18
+
+### Fixed — Autopilot page 504 (cause #2)
+
+Removed `spawn_cron()` in 1.2.6 wasn't the whole story. The same `Schedule_Recovery` sweep also calls `wp_publish_post()` on every missed scheduled post — which fires every other plugin's `transition_post_status` / `publish_post` / `save_post` hooks (Yoast/Rank Math sitemap rebuild, Jetpack social share, image regen, broken-link checker, etc.). On a site with several stuck posts AND heavy SEO plugins, that's seconds of synchronous work per post happening on every admin page load.
+
+### Changed
+
+- **Auto-sweep on `init` / `wp_loaded` is OFF by default.** The schedule-recovery sweep no longer runs on every admin page load. It still runs when the user clicks the "Publish missed scheduled posts now" button on the Autopilot page. Power users who want the old behavior can re-enable with `define( 'RWAI_AUTO_RECOVERY', true );` in `wp-config.php`.
+- **Manual sweep caps at 5 posts per click.** Each `wp_publish_post()` fires expensive cross-plugin hooks; publishing 50 in one request was hitting nginx's request timeout. Click the button again to publish the next batch.
+
 ## [1.2.6] - 2026-05-17
 
 ### Fixed — 504 Gateway Time-out on Autopilot save + Run-now

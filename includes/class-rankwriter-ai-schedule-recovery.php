@@ -48,10 +48,25 @@ class RankWriter_AI_Schedule_Recovery {
 	}
 
 	public function register_hooks() {
-		add_action( 'init',     array( $this, 'maybe_run_sweep' ), 20 );
-		add_action( 'wp_loaded', array( $this, 'maybe_run_sweep' ), 20 );
+		// The auto-sweep on init/wp_loaded was the cause of multiple
+		// admin-page 504s in the wild — even after spawn_cron() was
+		// removed in 1.2.6, the inner wp_publish_post() call on every
+		// missed scheduled post fires every other plugin's
+		// transition_post_status / publish_post hooks (Yoast/Rank Math
+		// sitemap rebuild, Jetpack social share, image regeneration,
+		// etc.) and on sites with a backlog of missed posts + heavy
+		// SEO plugins that can take 30-60s synchronously. The sweep is
+		// now manual-only via the "Publish missed scheduled posts now"
+		// button on the Autopilot page.
+		//
+		// To re-enable auto-sweep on traffic, define this constant in
+		// wp-config.php: define( 'RWAI_AUTO_RECOVERY', true );
+		if ( defined( 'RWAI_AUTO_RECOVERY' ) && RWAI_AUTO_RECOVERY ) {
+			add_action( 'init',     array( $this, 'maybe_run_sweep' ), 20 );
+			add_action( 'wp_loaded', array( $this, 'maybe_run_sweep' ), 20 );
+		}
 
-		// Manual trigger (admin-post action).
+		// Manual trigger (admin-post action) — always wired.
 		add_action( 'admin_post_rwai_publish_missed_now', array( $this, 'handle_manual_publish' ) );
 	}
 
@@ -94,6 +109,12 @@ class RankWriter_AI_Schedule_Recovery {
 		// site timezone. WP stores this for every post.
 		$now_gmt = gmdate( 'Y-m-d H:i:s' );
 
+		// Cap at 5 per call: each wp_publish_post() fires every other
+		// plugin's transition_post_status / publish_post / save_post
+		// hooks (sitemap rebuild, social share, image regen, etc.),
+		// each of which can take seconds. Publishing 50 in one
+		// request can hit nginx's request timeout. The user can
+		// click the manual button again to publish the next batch.
 		$ids = $wpdb->get_col( $wpdb->prepare(
 			"SELECT ID
 			   FROM {$wpdb->posts}
@@ -101,7 +122,7 @@ class RankWriter_AI_Schedule_Recovery {
 			    AND post_date_gmt <= %s
 			    AND post_date_gmt != '0000-00-00 00:00:00'
 			  ORDER BY post_date_gmt ASC
-			  LIMIT 50",
+			  LIMIT 5",
 			$now_gmt
 		) );
 
