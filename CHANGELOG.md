@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-05-18
+
+### Added — Safe Mode kill switch (bisection tool)
+
+After three rounds of "fix the 504 / still 504s" we needed a definitive way to answer the question "is the slow admin page coming from RankWriter or from something else on the site?" — without me shipping more guesses. Now you can:
+
+Add this line to `wp-config.php` (above `/* That's all, stop editing! */`):
+
+```php
+define( 'RWAI_SAFE_MODE', true );
+```
+
+Reload the failing admin page. In safe mode, RankWriter registers ONLY:
+- The admin menu (so pages still render)
+- The Category Profile custom post type (so taxonomy queries don't break)
+
+EVERYTHING else — autopilot ticks, generation queue, schedule recovery, ads injection, speed optimizer, cluster manager, PSE queue, fact checker, SEO healer, browser cron, etc. — is skipped at boot.
+
+If the page now loads → the bug is in one of our background hooks; we bisect from there. If it still 504s → the cause is outside this plugin (theme, another plugin, or host config). Remove the constant from `wp-config.php` to restore normal operation.
+
+A yellow admin notice on every page confirms safe mode is active, so you don't forget you turned it on.
+
 ## [1.3.0] - 2026-05-18
 
 ### Added — Ads module (Ad Inserter clone, no extra plugin needed)

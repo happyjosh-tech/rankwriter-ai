@@ -10,8 +10,38 @@ class RankWriter_AI {
 
 	public function run() {
 
+		// Safe-mode kill switch. Users can add this to wp-config.php to
+		// disable every non-essential RankWriter hook:
+		//   define( 'RWAI_SAFE_MODE', true );
+		// In safe mode we still register the admin menu (so the user
+		// can deactivate / configure the plugin from /wp-admin) and the
+		// category profiles CPT (so taxonomy queries don't break), but
+		// we skip every background module, every cron, every init-time
+		// hook that could be the cause of a slow admin page. Use this
+		// to bisect "is the 504 coming from RankWriter or somewhere
+		// else on my site?"
+		$safe_mode = ( defined( 'RWAI_SAFE_MODE' ) && RWAI_SAFE_MODE );
+
 		$profiles = new RankWriter_AI_Category_Profiles();
 		$profiles->register_hooks();
+
+		if ( is_admin() ) {
+			require_once RWAI_PLUGIN_DIR . 'admin/class-rankwriter-ai-admin.php';
+			$admin = new RankWriter_AI_Admin();
+			$admin->register_hooks();
+			if ( $safe_mode ) {
+				add_action( 'admin_notices', function () {
+					echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'RankWriter AI is in SAFE MODE.', 'rankwriter-ai' ) . '</strong> ' . esc_html__( 'Background features (Autopilot ticks, generation queue, schedule recovery, ads injection, speed optimizer, etc.) are disabled. Admin pages will render, but nothing runs in the background. Remove the RWAI_SAFE_MODE constant from wp-config.php to restore normal operation.', 'rankwriter-ai' ) . '</p></div>';
+				} );
+			}
+		}
+
+		if ( $safe_mode ) {
+			// Bail before registering any other module. Admin pages will
+			// still render via the admin class above (they read options,
+			// no background work).
+			return;
+		}
 
 		add_action( 'rwai_scheduled_blog_analysis', array( $this, 'cron_run_analysis' ) );
 
@@ -140,10 +170,9 @@ class RankWriter_AI {
 
 		load_plugin_textdomain( 'rankwriter-ai', false, dirname( RWAI_PLUGIN_BASENAME ) . '/languages' );
 
-		if ( is_admin() ) {
-			$admin = new RankWriter_AI_Admin();
-			$admin->register_hooks();
-		}
+		// Admin class is already instantiated at the top of run() so it
+		// also registers in safe mode. Do NOT instantiate a second time
+		// here — that would double-register every menu and hook.
 	}
 
 	/**
