@@ -9,6 +9,8 @@ class RankWriter_AI_Helpers {
 		$defaults = array(
 			'claude_api_key'         => '',
 			'claude_model'           => 'claude-opus-4-7',
+			'gemini_api_key'         => '',
+			'gemini_model'           => 'gemini-2.5-flash',
 			'max_tokens'             => 8000,
 			'analyze_post_limit'     => 200,
 			'auto_analyze_frequency' => 'weekly',

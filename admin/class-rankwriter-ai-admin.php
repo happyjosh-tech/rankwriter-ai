@@ -645,6 +645,8 @@ class RankWriter_AI_Admin {
 		$values = array(
 			'claude_api_key'      => isset( $raw['claude_api_key'] ) ? sanitize_text_field( $raw['claude_api_key'] ) : '',
 			'claude_model'        => isset( $raw['claude_model'] ) ? sanitize_text_field( $raw['claude_model'] ) : 'claude-opus-4-7',
+			'gemini_api_key'      => isset( $raw['gemini_api_key'] ) ? sanitize_text_field( $raw['gemini_api_key'] ) : '',
+			'gemini_model'        => isset( $raw['gemini_model'] ) ? sanitize_text_field( $raw['gemini_model'] ) : 'gemini-2.5-flash',
 			'max_tokens'          => isset( $raw['max_tokens'] ) ? absint( $raw['max_tokens'] ) : 8000,
 			'analyze_post_limit'  => isset( $raw['analyze_post_limit'] ) ? absint( $raw['analyze_post_limit'] ) : 200,
 			'default_image_style' => isset( $raw['default_image_style'] ) ? sanitize_text_field( $raw['default_image_style'] ) : 'realistic',

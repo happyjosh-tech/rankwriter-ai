@@ -25,7 +25,7 @@ $msg      = (string) $data['msg'];
 					<p class="description"><?php
 						printf(
 							/* translators: %s: console URL */
-							wp_kses_post( __( 'Create one at %s. Stored only in your WordPress database.', 'rankwriter-ai' ) ),
+							wp_kses_post( __( 'Create one at %s. Stored only in your WordPress database. Optional if you set a Gemini API key below.', 'rankwriter-ai' ) ),
 							'<a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a>'
 						);
 					?></p>
@@ -45,6 +45,38 @@ $msg      = (string) $data['msg'];
 							<option value="<?php echo esc_attr( $val ); ?>" <?php selected( $settings['claude_model'], $val ); ?>><?php echo esc_html( $label ); ?></option>
 						<?php endforeach; ?>
 					</select>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="rwai_gemini_key"><?php esc_html_e( 'Google Gemini API key', 'rankwriter-ai' ); ?></label></th>
+				<td>
+					<input type="password" class="regular-text" id="rwai_gemini_key" name="rwai_settings[gemini_api_key]" value="<?php echo esc_attr( isset( $settings['gemini_api_key'] ) ? $settings['gemini_api_key'] : '' ); ?>" autocomplete="off" />
+					<p class="description"><?php
+						printf(
+							/* translators: %s: Google AI Studio URL */
+							wp_kses_post( __( 'Free key at %s. Used as an automatic fallback when Claude is unavailable (no credit, rate-limited, key missing, outage). You can run on Gemini alone by leaving the Claude key blank.', 'rankwriter-ai' ) ),
+							'<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>'
+						);
+					?></p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><label for="rwai_gemini_model"><?php esc_html_e( 'Gemini model', 'rankwriter-ai' ); ?></label></th>
+				<td>
+					<select id="rwai_gemini_model" name="rwai_settings[gemini_model]">
+						<?php
+						$gemini_models = array(
+							'gemini-2.5-pro'   => 'Gemini 2.5 Pro (highest quality)',
+							'gemini-2.5-flash' => 'Gemini 2.5 Flash (balanced, recommended)',
+							'gemini-2.5-flash-lite' => 'Gemini 2.5 Flash Lite (fastest, cheapest)',
+							'gemini-2.0-flash' => 'Gemini 2.0 Flash (legacy)',
+						);
+						$current_gemini = isset( $settings['gemini_model'] ) ? $settings['gemini_model'] : 'gemini-2.5-flash';
+						foreach ( $gemini_models as $val => $label ) : ?>
+							<option value="<?php echo esc_attr( $val ); ?>" <?php selected( $current_gemini, $val ); ?>><?php echo esc_html( $label ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<p class="description"><?php esc_html_e( 'Flash is a strong default — fast and free-tier friendly. Pro is slower but matches Claude Opus more closely on long-form writing.', 'rankwriter-ai' ); ?></p>
 				</td>
 			</tr>
 			<tr>
