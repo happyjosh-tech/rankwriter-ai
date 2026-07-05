@@ -3,7 +3,7 @@
  * Plugin Name:       RankWriter AI
  * Plugin URI:        https://github.com/happyjosh-tech/rankwriter-ai
  * Description:       AI-powered content generator that learns from your existing blog and supports unlimited custom category profiles. Runs on Anthropic Claude with an automatic Google Gemini fallback.
- * Version:           1.4.0
+ * Version:           1.5.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            RankWriter AI
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'RWAI_VERSION', '1.4.0' );
+define( 'RWAI_VERSION', '1.5.0' );
 define( 'RWAI_PLUGIN_FILE', __FILE__ );
 define( 'RWAI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'RWAI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -88,6 +88,8 @@ require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-schedule-recovery.p
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-browser-cron.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-ads-db.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-ads-inserter.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-bot-blocker-db.php';
+require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-bot-blocker.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-fact-checker.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-refresher-db.php';
 require_once RWAI_PLUGIN_DIR . 'includes/class-rankwriter-ai-content-refresher.php';

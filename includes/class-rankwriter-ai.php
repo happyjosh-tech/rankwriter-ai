@@ -70,6 +70,16 @@ class RankWriter_AI {
 			( new RankWriter_AI_Ads_Inserter() )->register_hooks();
 		}
 
+		// Bot Blocker: country + IP access control on the frontend.
+		// Guards against click-fraud traffic (invalid AdSense clicks)
+		// from a specific country/IP range ever reaching a page.
+		if ( class_exists( 'RankWriter_AI_Bot_Blocker' ) ) {
+			( new RankWriter_AI_Bot_Blocker() )->register_hooks();
+		}
+		if ( is_admin() && class_exists( 'RankWriter_AI_Bot_Blocker_DB' ) ) {
+			RankWriter_AI_Bot_Blocker_DB::maybe_upgrade();
+		}
+
 		// Scheduled-post recovery: catches WP-Cron "missed schedule"
 		// failures so any post stuck at status=future past its date gets
 		// published on the next page load, and stalled RWAI cron hooks

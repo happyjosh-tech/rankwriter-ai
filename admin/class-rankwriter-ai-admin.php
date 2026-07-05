@@ -30,6 +30,7 @@ class RankWriter_AI_Admin {
 	const SPEED_SLUG      = 'rankwriter-ai-speed';
 	const LEGAL_SLUG      = 'rankwriter-ai-legal';
 	const ADS_SLUG        = 'rankwriter-ai-ads';
+	const BOT_BLOCKER_SLUG = 'rankwriter-ai-bot-blocker';
 	const SETTINGS_SLUG   = 'rankwriter-ai-settings';
 
 	const SETTINGS_NONCE  = 'rwai_save_settings';
@@ -59,6 +60,7 @@ class RankWriter_AI_Admin {
 	const HEALER_NONCE    = 'rwai_healer';
 	const SPEED_NONCE     = 'rwai_speed';
 	const ADS_NONCE       = 'rwai_ads';
+	const BOT_BLOCKER_NONCE = 'rwai_bot_blocker';
 
 	public function register_hooks() {
 		add_action( 'admin_menu', array( $this, 'register_menus' ) );
@@ -303,6 +305,14 @@ class RankWriter_AI_Admin {
 		);
 		add_submenu_page(
 			self::MENU_SLUG,
+			__( 'Bot Blocker', 'rankwriter-ai' ),
+			__( 'Bot Blocker', 'rankwriter-ai' ),
+			'manage_options',
+			self::BOT_BLOCKER_SLUG,
+			array( $this, 'render_bot_blocker' )
+		);
+		add_submenu_page(
+			self::MENU_SLUG,
 			__( 'Settings', 'rankwriter-ai' ),
 			__( 'Settings', 'rankwriter-ai' ),
 			'manage_options',
@@ -401,6 +411,12 @@ class RankWriter_AI_Admin {
 				break;
 			case 'save_ads':
 				$this->handle_save_ads();
+				break;
+			case 'save_bot_blocker':
+				$this->handle_save_bot_blocker();
+				break;
+			case 'clear_bot_blocker_log':
+				$this->handle_clear_bot_blocker_log();
 				break;
 			case 'refill_autopilot_queue':
 				$this->handle_refill_autopilot();
@@ -1241,6 +1257,48 @@ class RankWriter_AI_Admin {
 			'active'   => isset( $_GET['block'] ) ? max( 1, min( RankWriter_AI_Ads_DB::NUM_BLOCKS, (int) $_GET['block'] ) ) : 1,
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/ads.php';
+	}
+
+	private function handle_save_bot_blocker() {
+		check_admin_referer( self::BOT_BLOCKER_NONCE );
+
+		$patch = array(
+			'enabled'            => isset( $_POST['enabled'] ) ? 1 : 0,
+			'mode'               => isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : 'blacklist',
+			'countries'          => isset( $_POST['countries'] ) && is_array( $_POST['countries'] ) ? implode( ',', wp_unslash( $_POST['countries'] ) ) : '',
+			'manual_countries'   => isset( $_POST['manual_countries'] ) ? (string) wp_unslash( $_POST['manual_countries'] ) : '',
+			'blocked_ips'        => isset( $_POST['blocked_ips'] ) ? (string) wp_unslash( $_POST['blocked_ips'] ) : '',
+			'whitelisted_ips'    => isset( $_POST['whitelisted_ips'] ) ? (string) wp_unslash( $_POST['whitelisted_ips'] ) : '',
+			'exempt_logged_in'   => isset( $_POST['exempt_logged_in'] ) ? 1 : 0,
+			'exempt_search_bots' => isset( $_POST['exempt_search_bots'] ) ? 1 : 0,
+			'geo_api_lookup'     => isset( $_POST['geo_api_lookup'] ) ? 1 : 0,
+			'enable_logging'     => isset( $_POST['enable_logging'] ) ? 1 : 0,
+			'block_message'      => isset( $_POST['block_message'] ) ? (string) wp_unslash( $_POST['block_message'] ) : '',
+		);
+		RankWriter_AI_Bot_Blocker_DB::save_settings( $patch );
+
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::BOT_BLOCKER_SLUG, array( 'rwai_msg' => 'bot-blocker-saved' ) ) );
+		exit;
+	}
+
+	private function handle_clear_bot_blocker_log() {
+		check_admin_referer( self::BOT_BLOCKER_NONCE );
+		RankWriter_AI_Bot_Blocker_DB::clear_log();
+		wp_safe_redirect( RankWriter_AI_Helpers::admin_url( self::BOT_BLOCKER_SLUG, array( 'rwai_msg' => 'bot-blocker-log-cleared' ) ) );
+		exit;
+	}
+
+	public function render_bot_blocker() {
+		if ( ! current_user_can( 'manage_options' ) ) { return; }
+		$data = array(
+			'settings' => RankWriter_AI_Bot_Blocker_DB::get_settings(),
+			'countries' => RankWriter_AI_Bot_Blocker_DB::all_countries(),
+			'log'      => RankWriter_AI_Bot_Blocker_DB::recent( 100 ),
+			'blocked_24h' => RankWriter_AI_Bot_Blocker_DB::count_in_window( 24 ),
+			'top_countries' => RankWriter_AI_Bot_Blocker_DB::top_countries( 5 ),
+			'msg'      => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+		);
+		require RWAI_PLUGIN_DIR . 'admin/partials/bot-blocker.php';
 	}
 
 	/**

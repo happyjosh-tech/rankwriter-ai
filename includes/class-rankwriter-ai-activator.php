@@ -84,6 +84,12 @@ class RankWriter_AI_Activator {
 			RankWriter_AI_SEO_Healer_DB::install();
 		}
 
+		// Install the Bot Blocker's blocked-hit log table. Blocking itself
+		// stays off until the admin enables it on the Bot Blocker page.
+		if ( class_exists( 'RankWriter_AI_Bot_Blocker_DB' ) ) {
+			RankWriter_AI_Bot_Blocker_DB::install();
+		}
+
 		// Create the Speed Optimizer cache dir up front so the first
 		// front-end request after activation doesn't race on mkdir.
 		// The orchestrator's ensure_cache_dir() also handles this, but
