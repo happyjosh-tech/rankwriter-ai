@@ -12,12 +12,23 @@ $msg           = (string) $data['msg'];
 $my_ip         = (string) $data['my_ip'];
 $my_country    = (string) $data['my_country'];
 $my_logged_in  = ! empty( $data['my_logged_in'] );
+$behind_cloudflare = ! empty( $data['behind_cloudflare'] );
 
 $selected = array_flip( array_filter( explode( ',', (string) $settings['countries'] ) ) );
 ?>
 <div class="wrap rwai-wrap rwai-bot-blocker-wrap">
 	<h1>🛡️ <?php esc_html_e( 'Bot Blocker — country & IP access control', 'rankwriter-ai' ); ?></h1>
 	<p class="rwai-lede"><?php esc_html_e( 'Block visitors from specific countries or IP addresses before they ever load a page. Built to stop suspicious traffic (click-fraud bots, invalid AdSense clicks) coming from a country or IP range you\'ve identified as abusive.', 'rankwriter-ai' ); ?></p>
+
+	<?php if ( $behind_cloudflare ) : ?>
+		<div class="notice notice-warning">
+			<p>
+				<strong><?php esc_html_e( 'Cloudflare detected in front of this site.', 'rankwriter-ai' ); ?></strong>
+				<?php esc_html_e( "If Cloudflare is caching full pages for this site (a \"Cache Everything\" page rule, or Automatic Platform Optimization), a page rendered for an allowed visitor can be served straight from Cloudflare's edge to a blocked visitor later — WordPress, and this plugin, never sees that request to stop it. This plugin now tells your origin server not to let that happen for pages it generates, but it can't reach into Cloudflare's edge config.", 'rankwriter-ai' ); ?>
+				<?php esc_html_e( 'For a guarantee that holds even against edge caching, also add a free Cloudflare Firewall/WAF rule that blocks the same countries or IPs directly at the edge (Cloudflare dashboard → Security → WAF → create rule, condition "Country").', 'rankwriter-ai' ); ?>
+			</p>
+		</div>
+	<?php endif; ?>
 
 	<?php if ( 'bot-blocker-saved' === $msg ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Bot Blocker settings saved.', 'rankwriter-ai' ); ?></p></div>

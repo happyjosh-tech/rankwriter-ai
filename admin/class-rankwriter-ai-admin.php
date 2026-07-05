@@ -1306,6 +1306,7 @@ class RankWriter_AI_Admin {
 			'my_ip'         => $my_ip,
 			'my_country'    => $my_ip ? RankWriter_AI_Bot_Blocker::visitor_country( $my_ip, ! empty( $settings['geo_api_lookup'] ) ) : '',
 			'my_logged_in'  => is_user_logged_in(),
+			'behind_cloudflare' => ! empty( $_SERVER['HTTP_CF_CONNECTING_IP'] ) || ! empty( $_SERVER['HTTP_CF_RAY'] ),
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/bot-blocker.php';
 	}

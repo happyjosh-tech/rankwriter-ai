@@ -36,6 +36,29 @@ class RankWriter_AI_Bot_Blocker {
 		// is_frontend_request()) since none of the usual is_admin() /
 		// DOING_AJAX / REST_REQUEST guards are fully populated this early.
 		add_action( 'init', array( $this, 'maybe_block' ), -100 );
+
+		// While enabled, stop any shared cache sitting in front of
+		// WordPress (Cloudflare, a host's edge cache, Varnish, etc.)
+		// from caching a page rendered for an allowed visitor and then
+		// handing that same cached copy to a blocked visitor later —
+		// a cached response never reaches WordPress at all, so nothing
+		// on the 'init' hook above could stop that. Runs very late so
+		// it overrides the Speed Optimizer's own browser-cache headers
+		// (which otherwise send "public" + "s-maxage", exactly the
+		// signal a CDN uses to cache and reuse a page across visitors).
+		add_action( 'send_headers', array( $this, 'maybe_disable_shared_cache' ), 999 );
+	}
+
+	public function maybe_disable_shared_cache() {
+		if ( ! self::is_frontend_request() ) {
+			return;
+		}
+		$settings = RankWriter_AI_Bot_Blocker_DB::get_settings();
+		if ( empty( $settings['enabled'] ) ) {
+			return;
+		}
+		header( 'Cache-Control: no-store, no-cache, must-revalidate, private, max-age=0, s-maxage=0' );
+		header( 'Pragma: no-cache' );
 	}
 
 	public function maybe_block() {
