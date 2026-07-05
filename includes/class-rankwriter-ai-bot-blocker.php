@@ -27,14 +27,22 @@ class RankWriter_AI_Bot_Blocker {
 	const GEO_TRANSIENT_TTL    = WEEK_IN_SECONDS;
 
 	public function register_hooks() {
-		// template_redirect only fires for real frontend page requests —
-		// it naturally skips wp-admin, admin-ajax.php, wp-cron.php, and
-		// REST API calls, so we never risk locking the admin out of
-		// their own dashboard or breaking background jobs.
-		add_action( 'template_redirect', array( $this, 'maybe_block' ), 1 );
+		// Must run before the bundled Speed Optimizer's static-HTML page
+		// cache, which serves a cached response and calls exit() on
+		// 'init' at priority 0 — that would otherwise let a cached page
+		// reach a blocked visitor without this check ever running.
+		// template_redirect fires too late to beat it, so we hook here
+		// instead and do our own frontend-request filtering (see
+		// is_frontend_request()) since none of the usual is_admin() /
+		// DOING_AJAX / REST_REQUEST guards are fully populated this early.
+		add_action( 'init', array( $this, 'maybe_block' ), -100 );
 	}
 
 	public function maybe_block() {
+		if ( ! self::is_frontend_request() ) {
+			return;
+		}
+
 		$settings = RankWriter_AI_Bot_Blocker_DB::get_settings();
 		if ( empty( $settings['enabled'] ) ) {
 			return;
@@ -101,6 +109,40 @@ class RankWriter_AI_Bot_Blocker {
 			esc_html__( 'Access Denied', 'rankwriter-ai' ),
 			array( 'response' => 403 )
 		);
+	}
+
+	/**
+	 * True if this looks like a normal public page view — i.e. the kind
+	 * of request we actually want to gate. Running on 'init' at a very
+	 * early priority (see register_hooks()) means the usual late-bound
+	 * signals aren't all available yet, so this checks what's already
+	 * set at that point plus a couple of manual fallbacks:
+	 *   - DOING_AJAX / DOING_CRON / XMLRPC_REQUEST / WP_CLI are defined
+	 *     by their respective entry scripts before WP core even loads,
+	 *     so they're already reliable here.
+	 *   - REST_REQUEST is NOT set yet this early (WP only defines it on
+	 *     'parse_request', after 'init') — detected via the wp-json URL
+	 *     prefix / ?rest_route= fallback instead.
+	 */
+	private static function is_frontend_request() {
+		if ( is_admin() ) {
+			return false;
+		}
+		if ( ( defined( 'DOING_AJAX' ) && DOING_AJAX )
+			|| ( defined( 'DOING_CRON' ) && DOING_CRON )
+			|| ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST )
+			|| ( defined( 'REST_REQUEST' ) && REST_REQUEST )
+			|| ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return false;
+		}
+		if ( isset( $_GET['rest_route'] ) ) {
+			return false;
+		}
+		$uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		if ( '' !== $uri && function_exists( 'rest_get_url_prefix' ) && false !== strpos( $uri, '/' . rest_get_url_prefix() . '/' ) ) {
+			return false;
+		}
+		return true;
 	}
 
 	/**

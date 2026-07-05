@@ -1290,13 +1290,22 @@ class RankWriter_AI_Admin {
 
 	public function render_bot_blocker() {
 		if ( ! current_user_can( 'manage_options' ) ) { return; }
+		$settings = RankWriter_AI_Bot_Blocker_DB::get_settings();
+		$my_ip    = RankWriter_AI_Bot_Blocker::visitor_ip();
 		$data = array(
-			'settings' => RankWriter_AI_Bot_Blocker_DB::get_settings(),
+			'settings' => $settings,
 			'countries' => RankWriter_AI_Bot_Blocker_DB::all_countries(),
 			'log'      => RankWriter_AI_Bot_Blocker_DB::recent( 100 ),
 			'blocked_24h' => RankWriter_AI_Bot_Blocker_DB::count_in_window( 24 ),
 			'top_countries' => RankWriter_AI_Bot_Blocker_DB::top_countries( 5 ),
 			'msg'      => isset( $_GET['rwai_msg'] ) ? sanitize_key( $_GET['rwai_msg'] ) : '',
+			// Diagnostics: what the blocker sees for *this* admin request
+			// right now, so the admin can self-check why a VPN test did
+			// or didn't get blocked (e.g. logged-in exemption) without
+			// needing to actually get locked out to find out.
+			'my_ip'         => $my_ip,
+			'my_country'    => $my_ip ? RankWriter_AI_Bot_Blocker::visitor_country( $my_ip, ! empty( $settings['geo_api_lookup'] ) ) : '',
+			'my_logged_in'  => is_user_logged_in(),
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/bot-blocker.php';
 	}

@@ -9,6 +9,9 @@ $log           = (array) $data['log'];
 $blocked_24h   = (int) $data['blocked_24h'];
 $top_countries = (array) $data['top_countries'];
 $msg           = (string) $data['msg'];
+$my_ip         = (string) $data['my_ip'];
+$my_country    = (string) $data['my_country'];
+$my_logged_in  = ! empty( $data['my_logged_in'] );
 
 $selected = array_flip( array_filter( explode( ',', (string) $settings['countries'] ) ) );
 ?>
@@ -21,6 +24,34 @@ $selected = array_flip( array_filter( explode( ',', (string) $settings['countrie
 	<?php elseif ( 'bot-blocker-log-cleared' === $msg ) : ?>
 		<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Block log cleared.', 'rankwriter-ai' ); ?></p></div>
 	<?php endif; ?>
+
+	<div class="rwai-card" style="padding:14px 18px;margin-bottom:18px;background:#fff;border:1px solid #c3c4c7;">
+		<h2 style="margin-top:0;"><?php esc_html_e( 'Your current connection', 'rankwriter-ai' ); ?></h2>
+		<p class="description"><?php esc_html_e( 'What Bot Blocker sees for this browser right now — useful for confirming a VPN/country test before relying on it.', 'rankwriter-ai' ); ?></p>
+		<table class="form-table" role="presentation" style="margin-top:0;">
+			<tr>
+				<th><?php esc_html_e( 'Detected IP', 'rankwriter-ai' ); ?></th>
+				<td><code><?php echo esc_html( '' !== $my_ip ? $my_ip : __( 'Unknown', 'rankwriter-ai' ) ); ?></code></td>
+			</tr>
+			<tr>
+				<th><?php esc_html_e( 'Detected country', 'rankwriter-ai' ); ?></th>
+				<td><?php echo '' !== $my_country ? esc_html( RankWriter_AI_Bot_Blocker_DB::country_name( $my_country ) . ' (' . $my_country . ')' ) : esc_html__( 'Unknown — no CDN/host country header and either the API lookup is off or it failed. Country rules would be skipped (fail-open) for this visit.', 'rankwriter-ai' ); ?></td>
+			</tr>
+			<tr>
+				<th><?php esc_html_e( 'Logged in?', 'rankwriter-ai' ); ?></th>
+				<td>
+					<?php if ( $my_logged_in ) : ?>
+						<strong><?php esc_html_e( 'Yes.', 'rankwriter-ai' ); ?></strong>
+						<?php if ( ! empty( $settings['exempt_logged_in'] ) ) : ?>
+							<?php esc_html_e( "You're exempt from every rule below while logged in — testing a country block over VPN in this same logged-in browser will never show as blocked. Log out (or use a private/incognito window) to test the real visitor experience.", 'rankwriter-ai' ); ?>
+						<?php endif; ?>
+					<?php else : ?>
+						<?php esc_html_e( 'No.', 'rankwriter-ai' ); ?>
+					<?php endif; ?>
+				</td>
+			</tr>
+		</table>
+	</div>
 
 	<div class="rwai-card" style="padding:14px 18px;margin-bottom:18px;background:#f6f7f7;display:flex;gap:30px;flex-wrap:wrap;">
 		<div>
