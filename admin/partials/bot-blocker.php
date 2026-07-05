@@ -53,6 +53,59 @@ $selected = array_flip( array_filter( explode( ',', (string) $settings['countrie
 		</table>
 	</div>
 
+	<div class="rwai-card" style="padding:14px 18px;margin-bottom:18px;background:#fff;border:1px solid #c3c4c7;">
+		<h2 style="margin-top:0;"><?php esc_html_e( 'Currently configured', 'rankwriter-ai' ); ?></h2>
+		<?php if ( empty( $settings['enabled'] ) ) : ?>
+			<p><span class="rwai-pill rwai-pill-warn"><?php esc_html_e( 'Bot Blocker is OFF', 'rankwriter-ai' ); ?></span> <?php esc_html_e( '— nothing below is being enforced until you enable it and save.', 'rankwriter-ai' ); ?></p>
+		<?php else : ?>
+			<p><span class="rwai-pill rwai-pill-ok"><?php esc_html_e( 'Bot Blocker is ON', 'rankwriter-ai' ); ?></span></p>
+		<?php endif; ?>
+		<table class="form-table" role="presentation" style="margin-top:0;">
+			<tr>
+				<th><?php esc_html_e( 'Mode', 'rankwriter-ai' ); ?></th>
+				<td><?php echo 'whitelist' === $settings['mode'] ? esc_html__( 'Allow ONLY the countries listed below — everyone else is blocked', 'rankwriter-ai' ) : esc_html__( 'Block ONLY the countries listed below — everyone else is allowed', 'rankwriter-ai' ); ?></td>
+			</tr>
+			<tr>
+				<th><?php echo 'whitelist' === $settings['mode'] ? esc_html__( 'Allowed countries', 'rankwriter-ai' ) : esc_html__( 'Blocked countries', 'rankwriter-ai' ); ?> (<?php echo (int) count( $settings['all_countries'] ); ?>)</th>
+				<td>
+					<?php if ( empty( $settings['all_countries'] ) ) : ?>
+						<em class="description"><?php esc_html_e( 'None selected yet — pick countries below and save.', 'rankwriter-ai' ); ?></em>
+					<?php else : ?>
+						<?php foreach ( $settings['all_countries'] as $code ) : ?>
+							<span style="display:inline-block;background:#f0f0f1;border:1px solid #c3c4c7;border-radius:3px;padding:2px 8px;margin:0 6px 6px 0;font-size:12px;"><?php echo esc_html( RankWriter_AI_Bot_Blocker_DB::country_name( $code ) . ' (' . $code . ')' ); ?></span>
+						<?php endforeach; ?>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<tr>
+				<th><?php esc_html_e( 'Blocked IPs', 'rankwriter-ai' ); ?></th>
+				<td>
+					<?php
+					$blocked_ip_lines = array_filter( array_map( 'trim', preg_split( '/\r?\n/', (string) $settings['blocked_ips'] ) ) );
+					if ( empty( $blocked_ip_lines ) ) :
+					?>
+						<em class="description"><?php esc_html_e( 'None configured.', 'rankwriter-ai' ); ?></em>
+					<?php else : ?>
+						<code><?php echo esc_html( implode( ', ', $blocked_ip_lines ) ); ?></code>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<tr>
+				<th><?php esc_html_e( 'Never-block (whitelisted) IPs', 'rankwriter-ai' ); ?></th>
+				<td>
+					<?php
+					$whitelist_ip_lines = array_filter( array_map( 'trim', preg_split( '/\r?\n/', (string) $settings['whitelisted_ips'] ) ) );
+					if ( empty( $whitelist_ip_lines ) ) :
+					?>
+						<em class="description"><?php esc_html_e( 'None configured.', 'rankwriter-ai' ); ?></em>
+					<?php else : ?>
+						<code><?php echo esc_html( implode( ', ', $whitelist_ip_lines ) ); ?></code>
+					<?php endif; ?>
+				</td>
+			</tr>
+		</table>
+	</div>
+
 	<div class="rwai-card" style="padding:14px 18px;margin-bottom:18px;background:#f6f7f7;display:flex;gap:30px;flex-wrap:wrap;">
 		<div>
 			<div style="font-size:24px;font-weight:600;"><?php echo esc_html( RankWriter_AI_Helpers::format_number( $blocked_24h ) ); ?></div>

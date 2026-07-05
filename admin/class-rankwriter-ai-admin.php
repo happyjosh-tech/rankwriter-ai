@@ -1437,12 +1437,26 @@ class RankWriter_AI_Admin {
 			}
 		}
 
+		$bot_blocker = array();
+		if ( class_exists( 'RankWriter_AI_Bot_Blocker_DB' ) ) {
+			$bb_settings = RankWriter_AI_Bot_Blocker_DB::get_settings();
+			$bot_blocker = array(
+				'enabled'       => ! empty( $bb_settings['enabled'] ),
+				'mode'          => $bb_settings['mode'],
+				'country_count' => count( $bb_settings['all_countries'] ),
+				'countries'     => $bb_settings['all_countries'],
+				'ip_count'      => count( array_filter( array_map( 'trim', preg_split( '/\r?\n/', (string) $bb_settings['blocked_ips'] ) ) ) ),
+				'blocked_24h'   => RankWriter_AI_Bot_Blocker_DB::count_in_window( 24 ),
+			);
+		}
+
 		$data = array(
 			'profile_count' => $profiles->count(),
 			'style_profile' => $style->get(),
 			'last_run'      => $style->last_run(),
 			'api_ready'     => $client->is_configured(),
 			'cpc_dashboard' => $cpc_dashboard,
+			'bot_blocker'   => $bot_blocker,
 		);
 		require RWAI_PLUGIN_DIR . 'admin/partials/dashboard.php';
 	}

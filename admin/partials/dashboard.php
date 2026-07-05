@@ -79,6 +79,42 @@ $api_ready     = (bool) $data['api_ready'];
 		</div>
 	<?php endif; ?>
 
+	<?php
+	$bb = isset( $data['bot_blocker'] ) ? (array) $data['bot_blocker'] : array();
+	if ( ! empty( $bb ) ) :
+		$bb_url = RankWriter_AI_Helpers::admin_url( RankWriter_AI_Admin::BOT_BLOCKER_SLUG );
+	?>
+		<div class="rwai-card rwai-card-wide">
+			<h2>🛡️ <?php esc_html_e( 'Bot Blocker', 'rankwriter-ai' ); ?>
+				<a href="<?php echo esc_url( $bb_url ); ?>" class="page-title-action" style="float:right;"><?php esc_html_e( 'Open Bot Blocker', 'rankwriter-ai' ); ?></a>
+			</h2>
+			<p>
+				<?php if ( empty( $bb['enabled'] ) ) : ?>
+					<span class="rwai-pill rwai-pill-warn"><?php esc_html_e( 'OFF', 'rankwriter-ai' ); ?></span>
+				<?php else : ?>
+					<span class="rwai-pill rwai-pill-ok"><?php esc_html_e( 'ON', 'rankwriter-ai' ); ?></span>
+				<?php endif; ?>
+				<?php
+				printf(
+					/* translators: 1: number of countries, 2: number of IPs, 3: blocked visits in the last 24h, 4: "allowed" or "blocked" */
+					esc_html__( '%1$d %4$s countries · %2$d blocked IP/CIDR entries · %3$d blocked visits in the last 24h', 'rankwriter-ai' ),
+					(int) $bb['country_count'],
+					(int) $bb['ip_count'],
+					(int) $bb['blocked_24h'],
+					'whitelist' === $bb['mode'] ? esc_html__( 'allowed', 'rankwriter-ai' ) : esc_html__( 'blocked', 'rankwriter-ai' )
+				);
+				?>
+			</p>
+			<?php if ( ! empty( $bb['countries'] ) ) : ?>
+				<p>
+					<?php foreach ( $bb['countries'] as $code ) : ?>
+						<span style="display:inline-block;background:#f0f0f1;border:1px solid #c3c4c7;border-radius:3px;padding:2px 8px;margin:0 6px 6px 0;font-size:12px;"><?php echo esc_html( RankWriter_AI_Bot_Blocker_DB::country_name( $code ) . ' (' . $code . ')' ); ?></span>
+					<?php endforeach; ?>
+				</p>
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
+
 	<?php if ( ! empty( $style['summary'] ) ) : ?>
 		<div class="rwai-card rwai-card-wide">
 			<h2><?php esc_html_e( 'Current Blog Style Profile', 'rankwriter-ai' ); ?></h2>
